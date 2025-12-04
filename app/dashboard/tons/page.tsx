@@ -124,12 +124,14 @@ export default function TonsPage() {
           </div>
 
           <div className="bg-blue-50 p-6 rounded-xl">
-            <p className="text-sm text-gray-600 mb-1">Total Tons</p>
+            <p className="text-sm text-gray-900 font-medium mb-1">
+Total Tons</p>
             <p className="text-3xl font-bold text-blue-600">{totalTons.toFixed(2)}</p>
           </div>
 
           <div className="bg-green-50 p-6 rounded-xl">
-            <p className="text-sm text-gray-600 mb-1">Revenue (@ ₹167/ton)</p>
+            <p className="text-sm text-gray-900 font-medium mb-1">
+Revenue (@ ₹167/ton)</p>
             <p className="text-3xl font-bold text-green-600">₹{totalRevenue.toLocaleString('en-IN')}</p>
           </div>
         </div>

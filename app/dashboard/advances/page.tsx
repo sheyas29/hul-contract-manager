@@ -190,19 +190,22 @@ export default function AdvancesPage() {
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           <div className="bg-orange-50 p-6 rounded-xl">
-            <p className="text-sm text-gray-600 mb-1">Total Pending Balance</p>
+            <p className="text-sm text-gray-900 font-medium mb-1">
+Total Pending Balance</p>
             <p className="text-3xl font-bold text-orange-600">₹{totalPending.toLocaleString('en-IN')}</p>
           </div>
 
           <div className="bg-blue-50 p-6 rounded-xl">
-            <p className="text-sm text-gray-600 mb-1">Active Advances</p>
+            <p className="text-sm text-gray-900 font-medium mb-1">
+Active Advances</p>
             <p className="text-3xl font-bold text-blue-600">
               {advances.filter(a => a.status !== 'completed').length}
             </p>
           </div>
 
           <div className="bg-green-50 p-6 rounded-xl">
-            <p className="text-sm text-gray-600 mb-1">Completed Advances</p>
+            <p className="text-sm text-gray-900 font-medium mb-1">
+Completed Advances</p>
             <p className="text-3xl font-bold text-green-600">
               {advances.filter(a => a.status === 'completed').length}
             </p>

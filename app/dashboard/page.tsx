@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import type { Worker } from '@/lib/supabase'
 import { supabase } from '@/lib/supabase'
-import type { Worker, DailyTon, Advance } from '@/lib/supabase'
 import { format } from 'date-fns'
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 
 export default function Dashboard() {
   const [workers, setWorkers] = useState<Worker[]>([])
@@ -25,7 +25,7 @@ export default function Dashboard() {
         .from('workers')
         .select('*')
         .eq('status', 'active')
-      
+
       if (workersData) {
         setWorkers(workersData)
         setActiveWorkers(workersData.length)
@@ -37,7 +37,7 @@ export default function Dashboard() {
         .from('daily_tons')
         .select('tons_lifted')
         .eq('date', today)
-      
+
       if (todayTonsData) {
         const total = todayTonsData.reduce((sum, item) => sum + Number(item.tons_lifted), 0)
         setTodayTons(total)
@@ -47,12 +47,12 @@ export default function Dashboard() {
       const currentMonth = new Date().getMonth() + 1
       const currentYear = new Date().getFullYear()
       const monthStart = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`
-      
+
       const { data: monthTonsData } = await supabase
         .from('daily_tons')
         .select('tons_lifted')
         .gte('date', monthStart)
-      
+
       if (monthTonsData) {
         const total = monthTonsData.reduce((sum, item) => sum + Number(item.tons_lifted), 0)
         setMonthTons(total)
@@ -63,7 +63,7 @@ export default function Dashboard() {
         .from('advances')
         .select('balance')
         .in('status', ['pending', 'repaying'])
-      
+
       if (advancesData) {
         const total = advancesData.reduce((sum, item) => sum + Number(item.balance), 0)
         setPendingAdvances(total)
@@ -96,7 +96,7 @@ export default function Dashboard() {
               <h1 className="text-2xl font-bold text-gray-900">HUL Contract Manager</h1>
               <p className="text-sm text-gray-600">Loading & Unloading Operations</p>
             </div>
-            <Link 
+            <Link
               href="/"
               className="text-sm text-indigo-600 hover:text-indigo-700"
             >
@@ -110,30 +110,34 @@ export default function Dashboard() {
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl shadow-sm">
-            <p className="text-sm text-gray-600 mb-1">Active Workers</p>
+            <p className="text-sm text-gray-900 font-medium mb-1">
+Active Workers</p>
             <p className="text-3xl font-bold text-gray-900">{activeWorkers}</p>
           </div>
-          
+
           <div className="bg-white p-6 rounded-xl shadow-sm">
-            <p className="text-sm text-gray-600 mb-1">Today's Tons</p>
+            <p className="text-sm text-gray-900 font-medium mb-1">
+Today's Tons</p>
             <p className="text-3xl font-bold text-blue-600">{todayTons.toFixed(2)}</p>
           </div>
-          
+
           <div className="bg-white p-6 rounded-xl shadow-sm">
-            <p className="text-sm text-gray-600 mb-1">Month Tons</p>
+            <p className="text-sm text-gray-900 font-medium mb-1">
+Month Tons</p>
             <p className="text-3xl font-bold text-green-600">{monthTons.toFixed(2)}</p>
             <p className="text-xs text-gray-500 mt-1">Revenue: ₹{monthRevenue.toLocaleString('en-IN')}</p>
           </div>
-          
+
           <div className="bg-white p-6 rounded-xl shadow-sm">
-            <p className="text-sm text-gray-600 mb-1">Pending Advances</p>
+            <p className="text-sm text-gray-900 font-medium mb-1">
+Pending Advances</p>
             <p className="text-3xl font-bold text-orange-600">₹{pendingAdvances.toLocaleString('en-IN')}</p>
           </div>
         </div>
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          <Link 
+          <Link
             href="/dashboard/workers"
             className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow border-2 border-transparent hover:border-indigo-500"
           >
@@ -141,7 +145,7 @@ export default function Dashboard() {
             <p className="text-sm text-gray-600">Add, edit, or view worker details</p>
           </Link>
 
-          <Link 
+          <Link
             href="/dashboard/tons"
             className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow border-2 border-transparent hover:border-blue-500"
           >
@@ -149,7 +153,7 @@ export default function Dashboard() {
             <p className="text-sm text-gray-600">Record tons lifted by each worker</p>
           </Link>
 
-          <Link 
+          <Link
             href="/dashboard/advances"
             className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow border-2 border-transparent hover:border-orange-500"
           >
@@ -157,7 +161,7 @@ export default function Dashboard() {
             <p className="text-sm text-gray-600">Manage advances and repayments</p>
           </Link>
 
-          <Link 
+          <Link
             href="/dashboard/billing"
             className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow border-2 border-transparent hover:border-green-500"
           >
@@ -165,7 +169,7 @@ export default function Dashboard() {
             <p className="text-sm text-gray-600">Generate HUL billing statements</p>
           </Link>
 
-          <Link 
+          <Link
             href="/dashboard/salary"
             className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow border-2 border-transparent hover:border-purple-500"
           >
@@ -173,7 +177,7 @@ export default function Dashboard() {
             <p className="text-sm text-gray-600">Calculate and process salaries</p>
           </Link>
 
-          <Link 
+          <Link
             href="/dashboard/reports"
             className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow border-2 border-transparent hover:border-pink-500"
           >
@@ -201,8 +205,8 @@ export default function Dashboard() {
                     <td className="py-3 px-4 text-sm">{worker.name}</td>
                     <td className="py-3 px-4 text-sm">
                       <span className={`px-2 py-1 rounded-full text-xs ${
-                        worker.role === 'supervisor' 
-                          ? 'bg-purple-100 text-purple-700' 
+                        worker.role === 'supervisor'
+                          ? 'bg-purple-100 text-purple-700'
                           : 'bg-blue-100 text-blue-700'
                       }`}>
                         {worker.role}

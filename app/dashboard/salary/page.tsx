@@ -229,6 +229,7 @@ export default function SalaryPage() {
                 onChange={(e) => setSelectedYear(parseInt(e.target.value))}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
               >
+                <option value={2024}>2024</option>
                 <option value={2025}>2025</option>
                 <option value={2026}>2026</option>
                 <option value={2027}>2027</option>
@@ -251,22 +252,26 @@ export default function SalaryPage() {
         {salaries.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
             <div className="bg-blue-50 p-6 rounded-xl">
-              <p className="text-sm text-gray-600 mb-1">Total Base Salary</p>
+              <p className="text-sm text-gray-900 font-medium mb-1">
+Total Base Salary</p>
               <p className="text-2xl font-bold text-blue-600">₹{totalBaseSalary.toLocaleString('en-IN')}</p>
             </div>
 
             <div className="bg-orange-50 p-6 rounded-xl">
-              <p className="text-sm text-gray-600 mb-1">Total Deductions</p>
+              <p className="text-sm text-gray-900 font-medium mb-1">
+Total Deductions</p>
               <p className="text-2xl font-bold text-orange-600">₹{totalDeductions.toLocaleString('en-IN')}</p>
             </div>
 
             <div className="bg-green-50 p-6 rounded-xl">
-              <p className="text-sm text-gray-600 mb-1">Net Payable</p>
+              <p className="text-sm text-gray-900 font-medium mb-1">
+Net Payable</p>
               <p className="text-2xl font-bold text-green-600">₹{totalNetSalary.toLocaleString('en-IN')}</p>
             </div>
 
             <div className="bg-purple-50 p-6 rounded-xl">
-              <p className="text-sm text-gray-600 mb-1">HUL Direct Payment</p>
+              <p className="text-sm text-gray-900 font-medium mb-1">
+HUL Direct Payment</p>
               <p className="text-2xl font-bold text-purple-600">₹{totalHulDirect.toLocaleString('en-IN')}</p>
               <p className="text-xs text-gray-500 mt-1">Paid by HUL to workers</p>
             </div>

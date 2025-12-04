@@ -119,6 +119,7 @@ export default function BillingPage() {
                 onChange={(e) => setSelectedYear(parseInt(e.target.value))}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
               >
+                <option value={2024}>2024</option>
                 <option value={2025}>2025</option>
                 <option value={2026}>2026</option>
                 <option value={2027}>2027</option>
@@ -136,17 +137,20 @@ export default function BillingPage() {
               <h2 className="text-xl font-semibold mb-4">📊 Revenue from HUL</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-blue-50 p-6 rounded-xl">
-                  <p className="text-sm text-gray-600 mb-1">Total Tons Lifted</p>
+                  <p className="text-sm text-gray-900 font-medium mb-1">
+Total Tons Lifted</p>
                   <p className="text-3xl font-bold text-blue-600">{stats.totalTons.toFixed(2)}</p>
                 </div>
 
                 <div className="bg-green-50 p-6 rounded-xl">
-                  <p className="text-sm text-gray-600 mb-1">Rate per Ton</p>
+                  <p className="text-sm text-gray-900 font-medium mb-1">
+Rate per Ton</p>
                   <p className="text-3xl font-bold text-green-600">₹167</p>
                 </div>
 
                 <div className="bg-green-50 p-6 rounded-xl border-2 border-green-600">
-                  <p className="text-sm text-gray-600 mb-1">Total Revenue</p>
+                  <p className="text-sm text-gray-900 font-medium mb-1">
+Total Revenue</p>
                   <p className="text-3xl font-bold text-green-600">₹{stats.revenue.toLocaleString('en-IN')}</p>
                 </div>
               </div>
@@ -157,7 +161,8 @@ export default function BillingPage() {
               <h2 className="text-xl font-semibold mb-4">💸 Expenses</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-orange-50 p-6 rounded-xl">
-                  <p className="text-sm text-gray-600 mb-1">Food & Stay</p>
+                  <p className="text-sm text-gray-900 font-medium mb-1">
+Food & Stay</p>
                   <p className="text-xl font-bold text-orange-600">₹{stats.foodStayExpense.toLocaleString('en-IN')}</p>
                   <p className="text-xs text-gray-500 mt-1">
                     {stats.workerCount} people × ₹192/day × 30 days
@@ -165,13 +170,15 @@ export default function BillingPage() {
                 </div>
 
                 <div className="bg-red-50 p-6 rounded-xl">
-                  <p className="text-sm text-gray-600 mb-1">Salaries Paid</p>
+                  <p className="text-sm text-gray-900 font-medium mb-1">
+Salaries Paid</p>
                   <p className="text-xl font-bold text-red-600">₹{stats.totalSalaryPaid.toLocaleString('en-IN')}</p>
                   <p className="text-xs text-gray-500 mt-1">Net amount after advances</p>
                 </div>
 
                 <div className="bg-red-50 p-6 rounded-xl border-2 border-red-600">
-                  <p className="text-sm text-gray-600 mb-1">Total Expenses</p>
+                  <p className="text-sm text-gray-900 font-medium mb-1">
+Total Expenses</p>
                   <p className="text-xl font-bold text-red-600">
                     ₹{(stats.foodStayExpense + stats.totalSalaryPaid).toLocaleString('en-IN')}
                   </p>
