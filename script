@@ -1,0 +1,395 @@
+import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils.dataframe import dataframe_to_rows
+from datetime import datetime
+import os
+
+# ------------------ STYLES ------------------ #
+
+HEADER_FILL = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+HEADER_FONT = Font(bold=True, color="FFFFFF", size=11)
+BORDER = Border(
+    left=Side(style='thin'),
+    right=Side(style='thin'),
+    top=Side(style='thin'),
+    bottom=Side(style='thin'),
+)
+
+def style_sheet(ws, header_row=1):
+    """Apply simple table styling."""
+    for cell in ws[header_row]:
+        if cell.value is not None and cell.value != "":
+            cell.fill = HEADER_FILL
+            cell.font = HEADER_FONT
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = BORDER
+
+    for row in ws.iter_rows(min_row=header_row + 1):
+        for cell in row:
+            cell.border = BORDER
+            cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=False)
+
+# ------------------ WORKBOOK ------------------ #
+
+wb = Workbook()
+wb.remove(wb.active)  # remove default
+
+# =========================================================
+# 1. README
+# =========================================================
+ws_readme = wb.create_sheet("README", 0)
+ws_readme["A1"] = "HUL CONTRACT MANAGER - EXCEL BACKUP WORKBOOK"
+ws_readme["A1"].font = Font(bold=True, size=14, color="FFFFFF")
+ws_readme["A1"].fill = HEADER_FILL
+ws_readme.merge_cells("A1:D1")
+
+rows = [
+    ("", ""),
+    ("PURPOSE:", "Parallel Excel system mirroring the HUL contract manager app."),
+    ("", ""),
+    ("SHEETS:", ""),
+    ("Workers", "Master worker list with base salary etc."),
+    ("Daily_Tons_Dec", "December 2025 daily work entries."),
+    ("Daily_Tons_Jan", "January 2025 daily work entries (26 days, ~7 tons/day)."),
+    ("Monthly_Expenses", "Food & stay costs."),
+    ("Advances", "Worker advances."),
+    ("Advance_Repayments", "Month-wise deductions."),
+    ("Salary_Processing", "Calculated salaries with formulas."),
+    ("Monthly_Billing", "Revenue by month with formulas."),
+    ("Dashboard", "KPI dashboard driven by formulas."),
+    ("Backup_Log", "Audit trail."),
+    ("", ""),
+    ("LAST_UPDATED:", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+]
+
+r = 3
+for k, v in rows:
+    ws_readme[f"A{r}"] = k
+    ws_readme[f"B{r}"] = v
+    if ":" in str(k):
+        ws_readme[f"A{r}"].font = Font(bold=True)
+    r += 1
+
+ws_readme.column_dimensions["A"].width = 28
+ws_readme.column_dimensions["B"].width = 60
+
+# =========================================================
+# 2. WORKERS
+# =========================================================
+ws_workers = wb.create_sheet("Workers", 1)
+
+workers = [{
+    "Worker_ID": "W001",
+    "Name": "Supervisor",
+    "Phone": "9876543210",
+    "Role": "Supervisor",
+    "Base_Salary": 40000,
+    "Join_Date": "2024-01-15",
+    "Status": "Active",
+}]
+for i in range(2, 72):
+    workers.append({
+        "Worker_ID": f"W{i:03d}",
+        "Name": f"Worker {i}",
+        "Phone": f"987654{3210+i}"[-10:],
+        "Role": "Worker",
+        "Base_Salary": 20000,
+        "Join_Date": "2024-01-15",
+        "Status": "Active",
+    })
+df_workers = pd.DataFrame(workers)
+
+for r_idx, row in enumerate(dataframe_to_rows(df_workers, index=False, header=True), 1):
+    for c_idx, val in enumerate(row, 1):
+        ws_workers.cell(row=r_idx, column=c_idx, value=val)
+
+for col in "ABCDEFG":
+    ws_workers.column_dimensions[col].width = 16
+style_sheet(ws_workers)
+
+# =========================================================
+# 3. DAILY TONS - DEC 2025
+# =========================================================
+ws_dec = wb.create_sheet("Daily_Tons_Dec", 2)
+tons_dec = []
+for day in range(1, 32):
+    for wid in range(2, 72):
+        # ~90% attendance
+        if (day + wid) % 10 != 0:
+            tons_dec.append({
+                "Date": f"2025-12-{day:02d}",
+                "Worker_ID": f"W{wid:03d}",
+                "Worker_Name": f"Worker {wid}",
+                "Tons_Lifted": round(5.5 + (wid % 5) * 0.2, 2),
+                "Day": day
+            })
+
+df_dec = pd.DataFrame(tons_dec)
+for r_idx, row in enumerate(dataframe_to_rows(df_dec, index=False, header=True), 1):
+    for c_idx, val in enumerate(row, 1):
+        ws_dec.cell(row=r_idx, column=c_idx, value=val)
+
+for col in "ABCDE":
+    ws_dec.column_dimensions[col].width = 15
+style_sheet(ws_dec)
+
+# total tons formula in bottom row
+last_row_dec = ws_dec.max_row + 2
+ws_dec[f"A{last_row_dec}"] = "Total Tons (Dec)"
+ws_dec[f"D{last_row_dec}"] = f"=SUM(D2:D{ws_dec.max_row-2})"  # D column is Tons_Lifted
+
+# =========================================================
+# 4. DAILY TONS - JAN 2025
+# =========================================================
+ws_jan = wb.create_sheet("Daily_Tons_Jan", 3)
+tons_jan = []
+for day in range(1, 32):
+    for wid in range(2, 72):
+        # ~80% attendance (~26 days)
+        if (day + wid) % 5 != 0:
+            tons_jan.append({
+                "Date": f"2025-01-{day:02d}",
+                "Worker_ID": f"W{wid:03d}",
+                "Worker_Name": f"Worker {wid}",
+                "Tons_Lifted": round(6.8 + (wid % 4) * 0.1, 2),
+                "Day": day
+            })
+
+df_jan = pd.DataFrame(tons_jan)
+for r_idx, row in enumerate(dataframe_to_rows(df_jan, index=False, header=True), 1):
+    for c_idx, val in enumerate(row, 1):
+        ws_jan.cell(row=r_idx, column=c_idx, value=val)
+
+for col in "ABCDE":
+    ws_jan.column_dimensions[col].width = 15
+style_sheet(ws_jan)
+
+last_row_jan = ws_jan.max_row + 2
+ws_jan[f"A{last_row_jan}"] = "Total Tons (Jan)"
+ws_jan[f"D{last_row_jan}"] = f"=SUM(D2:D{ws_jan.max_row-2})"
+
+# =========================================================
+# 5. MONTHLY EXPENSES
+# =========================================================
+ws_exp = wb.create_sheet("Monthly_Expenses", 4)
+expenses = [
+    ["Month", "Year", "Workers", "Supervisor", "Days", "Rate_per_Person", "Total_Expense", "Payment_Date", "Status"],
+    ["December", 2025, 70, 1, 31, 192, None, "2025-12-01", "Paid"],
+    ["January", 2025, 70, 1, 31, 192, None, "2025-01-01", "Paid"],
+]
+for r_idx, row in enumerate(expenses, 1):
+    for c_idx, val in enumerate(row, 1):
+        ws_exp.cell(row=r_idx, column=c_idx, value=val)
+
+# formula for Total_Expense = (Workers+Supervisor)*Days*Rate
+for r in range(2, 4):
+    ws_exp[f"G{r}"] = f"=((C{r}+D{r})*E{r}*F{r})"
+
+for col in "ABCDEFGHI":
+    ws_exp.column_dimensions[col].width = 15
+style_sheet(ws_exp)
+
+# =========================================================
+# 6. ADVANCES
+# =========================================================
+ws_adv = wb.create_sheet("Advances", 5)
+advances = [
+    ["Worker_ID", "Worker_Name", "Advance_Amount", "Given_Date", "Reason",
+     "Total_Repaid", "Balance_Remaining", "Status"],
+    ["W002", "Worker 2", 10000, "2025-01-05", "New house down payment", 5000, None, "Repaying"],
+    ["W003", "Worker 3", 6000, "2025-01-02", "Festival expenses", 6000, None, "Completed"],
+    ["W004", "Worker 4", 12000, "2025-01-10", "Daughter wedding", 4000, None, "Repaying"],
+    ["W005", "Worker 5", 7500, "2025-01-08", "Medical treatment", 2500, None, "Repaying"],
+    ["W006", "Worker 6", 9000, "2025-01-15", "Emergency travel", 3000, None, "Repaying"],
+]
+for r_idx, row in enumerate(advances, 1):
+    for c_idx, val in enumerate(row, 1):
+        ws_adv.cell(row=r_idx, column=c_idx, value=val)
+
+# formula: Balance_Remaining = Advance_Amount - Total_Repaid
+for r in range(2, ws_adv.max_row + 1):
+    ws_adv[f"G{r}"] = f"=C{r}-F{r}"
+
+for col in "ABCDEFGH":
+    ws_adv.column_dimensions[col].width = 18
+style_sheet(ws_adv)
+
+# =========================================================
+# 7. ADVANCE REPAYMENTS
+# =========================================================
+ws_ar = wb.create_sheet("Advance_Repayments", 6)
+rep_rows = [
+    ["Worker_Name", "Advance_Amount", "Month", "Deduction_Amount", "Payment_Status", "Payment_Date"],
+    ["Worker 2", 10000, "Jan 2025", 5000, "Paid", "2025-01-31"],
+    ["Worker 2", 10000, "Feb 2025", 5000, "Pending", ""],
+    ["Worker 3", 6000, "Jan 2025", 6000, "Paid", "2025-01-31"],
+    ["Worker 4", 12000, "Jan 2025", 4000, "Paid", "2025-01-31"],
+    ["Worker 4", 12000, "Feb 2025", 4000, "Pending", ""],
+    ["Worker 4", 12000, "Mar 2025", 4000, "Pending", ""],
+    ["Worker 5", 7500, "Jan 2025", 2500, "Paid", "2025-01-31"],
+    ["Worker 5", 7500, "Feb 2025", 2500, "Pending", ""],
+    ["Worker 5", 7500, "Mar 2025", 2500, "Pending", ""],
+    ["Worker 6", 9000, "Jan 2025", 3000, "Paid", "2025-01-31"],
+    ["Worker 6", 9000, "Feb 2025", 3000, "Pending", ""],
+    ["Worker 6", 9000, "Mar 2025", 3000, "Pending", ""],
+]
+for r_idx, row in enumerate(rep_rows, 1):
+    for c_idx, val in enumerate(row, 1):
+        ws_ar.cell(row=r_idx, column=c_idx, value=val)
+
+for col in "ABCDEF":
+    ws_ar.column_dimensions[col].width = 18
+style_sheet(ws_ar)
+
+# =========================================================
+# 8. SALARY PROCESSING
+# =========================================================
+ws_sal = wb.create_sheet("Salary_Processing", 7)
+headers_sal = [
+    "Worker_ID", "Worker_Name", "Role", "Month", "Year",
+    "Base_Salary", "HUL_Direct", "Advance_Deductions",
+    "Other_Deductions", "Net_Salary", "Payment_Date", "Payment_Status"
+]
+for c_idx, h in enumerate(headers_sal, 1):
+    ws_sal.cell(row=1, column=c_idx, value=h)
+
+# fixed deductions pattern
+for wid in range(1, 72):
+    r = wid + 1
+    role = "Supervisor" if wid == 1 else "Worker"
+    base = 40000 if wid == 1 else 20000
+    hul = 0 if wid == 1 else 3000
+    if wid == 2:
+        adv = 5000
+    elif wid == 3:
+        adv = 6000
+    elif wid == 4:
+        adv = 4000
+    elif wid == 5:
+        adv = 2500
+    elif wid == 6:
+        adv = 3000
+    else:
+        adv = 0
+
+    ws_sal[f"A{r}"] = f"W{wid:03d}"
+    ws_sal[f"B{r}"] = "Supervisor" if wid == 1 else f"Worker {wid}"
+    ws_sal[f"C{r}"] = role
+    ws_sal[f"D{r}"] = "January"
+    ws_sal[f"E{r}"] = 2025
+    ws_sal[f"F{r}"] = base
+    ws_sal[f"G{r}"] = hul
+    ws_sal[f"H{r}"] = adv
+    ws_sal[f"I{r}"] = 0
+    # Net_Salary formula: Base + HUL - Advance - Other
+    ws_sal[f"J{r}"] = f"=F{r}+G{r}-H{r}-I{r}"
+    ws_sal[f"K{r}"] = "2025-01-31"
+    ws_sal[f"L{r}"] = "Paid"
+
+for col in "ABCDEFGHIJKL":
+    ws_sal.column_dimensions[col].width = 15
+style_sheet(ws_sal)
+
+# total salary row
+total_row_sal = ws_sal.max_row + 2
+ws_sal[f"I{total_row_sal}"] = "Total Net Salary"
+ws_sal[f"J{total_row_sal}"] = f"=SUM(J2:J{ws_sal.max_row-2})"
+
+# =========================================================
+# 9. MONTHLY BILLING
+# =========================================================
+ws_mb = wb.create_sheet("Monthly_Billing", 8)
+headers_mb = [
+    "Month", "Year", "Total_Tons", "Rate_per_Ton",
+    "Revenue_from_HUL", "Payment_Date", "Payment_Status"
+]
+for c_idx, h in enumerate(headers_mb, 1):
+    ws_mb.cell(row=1, column=c_idx, value=h)
+
+# Dec row (Total_Tons linked to Daily_Tons_Dec)
+ws_mb["A2"] = "December"
+ws_mb["B2"] = 2025
+ws_mb["C2"] = f"=Daily_Tons_Dec!D{last_row_dec}"
+ws_mb["D2"] = 167
+ws_mb["E2"] = "=C2*D2"
+ws_mb["F2"] = "2025-12-31"
+ws_mb["G2"] = "Pending"
+
+# Jan row
+ws_mb["A3"] = "January"
+ws_mb["B3"] = 2025
+ws_mb["C3"] = f"=Daily_Tons_Jan!D{last_row_jan}"
+ws_mb["D3"] = 167
+ws_mb["E3"] = "=C3*D3"
+ws_mb["F3"] = "2025-01-31"
+ws_mb["G3"] = "Received"
+
+for col in "ABCDEFG":
+    ws_mb.column_dimensions[col].width = 18
+style_sheet(ws_mb)
+
+# =========================================================
+# 10. DASHBOARD (FORMULA-DRIVEN KPIs)
+# =========================================================
+ws_dash = wb.create_sheet("Dashboard", 9)
+headers_dash = ["KPI", "Current_Value", "Target", "Unit", "Status"]
+for c_idx, h in enumerate(headers_dash, 1):
+    ws_dash.cell(row=1, column=c_idx, value=h)
+style_sheet(ws_dash)
+
+# We’ll reference sheets using formulas
+rows_dash = [
+    # KPI, Current_Value(formula), Target, Unit, Status (simple text for now)
+    ("Active Workers", "=COUNTA(Workers!A2:A999)", 71, "workers", "On Target"),
+    ("Total Tons (January)", "=Monthly_Billing!C3", 12740, "tons", "Achieved"),
+    ("Avg Tons per Worker (Jan)", "=Monthly_Billing!C3/70", 182, "tons", "Achieved"),
+    ("Revenue (January)", "=Monthly_Billing!E3", 2127580, "rupees", "Achieved"),
+    ("Food & Stay Expense (Jan)", "=Monthly_Expenses!G3", 422208, "rupees", "Under Budget"),
+    ("Total Salary Paid (Jan)", "=SUM(Salary_Processing!J2:J72)", 1400000, "rupees", "On Track"),
+    ("Pending Advances Balance", "=SUMIF(Advances!H2:H999,\"Repaying\",Advances!G2:G999)", 50000, "rupees", "Controlled"),
+    ("Net Profit (Jan)", "=Monthly_Billing!E3-Monthly_Expenses!G3-SUM(Salary_Processing!J2:J72)", 350000, "rupees", "Above Target"),
+]
+
+r = 2
+for kpi, formula, target, unit, status in rows_dash:
+    ws_dash[f"A{r}"] = kpi
+    ws_dash[f"B{r}"] = formula
+    ws_dash[f"C{r}"] = target
+    ws_dash[f"D{r}"] = unit
+    ws_dash[f"E{r}"] = status
+    r += 1
+
+for col in "ABCDE":
+    ws_dash.column_dimensions[col].width = 24
+
+# =========================================================
+# 11. BACKUP LOG
+# =========================================================
+ws_log = wb.create_sheet("Backup_Log", 10)
+headers_log = ["Date", "Time", "Type", "Details", "Status", "Notes"]
+for c_idx, h in enumerate(headers_log, 1):
+    ws_log.cell(row=1, column=c_idx, value=h)
+style_sheet(ws_log)
+
+now = datetime.now()
+ws_log.append([
+    now.strftime("%Y-%m-%d"),
+    now.strftime("%H:%M:%S"),
+    "Full Workbook Build",
+    "All sheets & formulas created via Python script",
+    "Success",
+    "Initial build",
+])
+
+for col in "ABCDEF":
+    ws_log.column_dimensions[col].width = 22
+
+# ------------------ SAVE FILE ------------------ #
+
+filename = f"HUL_Contract_Manager_Workbook_{datetime.now().strftime('%Y%m%d')}.xlsx"
+wb.save(filename)
+
+print("✅ Excel workbook generated successfully!")
+print(f"📄 File: {filename}")
+print(f"📍 Location: {os.path.abspath(filename)}")

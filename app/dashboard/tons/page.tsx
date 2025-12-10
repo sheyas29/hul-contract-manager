@@ -1,242 +1,267 @@
 'use client'
 
-import type { DailyTon, Worker } from '@/lib/supabase'
+import { logActivity } from '@/lib/logger'
 import { supabase } from '@/lib/supabase'
-import { format } from 'date-fns'
+import { ArrowLeft, Calendar, CheckCircle, Save, Search, XCircle } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
-export default function TonsPage() {
-  const [workers, setWorkers] = useState<Worker[]>([])
-  const [dailyTons, setDailyTons] = useState<(DailyTon & { worker_name: string })[]>([])
-  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'))
+type WorkerEntry = {
+  worker_id: string
+  name: string
+  tons: string // Keep as string for input handling
+  is_present: boolean
+  is_saved: boolean
+}
+
+export default function DailyEntryPage() {
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [entries, setEntries] = useState<WorkerEntry[]>([])
   const [loading, setLoading] = useState(true)
-  const [formData, setFormData] = useState({
-    worker_id: '',
-    tons_lifted: '',
-    notes: ''
-  })
+  const [saving, setSaving] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
-    fetchWorkers()
-    fetchDailyTons()
-  }, [selectedDate])
+    fetchWorkersAndEntries()
+  }, [date])
 
-  const fetchWorkers = async () => {
-    const { data } = await supabase
-      .from('workers')
-      .select('*')
-      .eq('status', 'active')
-      .eq('role', 'worker')
-      .order('name')
+  const fetchWorkersAndEntries = async () => {
+    setLoading(true)
+    try {
+      // 1. Get All Active Workers
+      const { data: workers } = await supabase
+        .from('workers')
+        .select('id, name')
+        .eq('status', 'active')
+        .order('name')
 
-    if (data) setWorkers(data)
-    setLoading(false)
-  }
+      if (!workers) return
 
-  const fetchDailyTons = async () => {
-    const { data } = await supabase
-      .from('daily_tons')
-      .select(`
-        *,
-        workers (name)
-      `)
-      .eq('date', selectedDate)
+      // 2. Get Existing Entries for this Date
+      const { data: existingData } = await supabase
+        .from('daily_tons')
+        .select('worker_id, tons_lifted, is_present')
+        .eq('date', date)
 
-    if (data) {
-      const formatted = data.map(item => ({
-        ...item,
-        worker_name: (item.workers as any)?.name || 'Unknown'
-      }))
-      setDailyTons(formatted)
+      // 3. Merge Data
+      const merged: WorkerEntry[] = workers.map(w => {
+        const entry = existingData?.find(e => e.worker_id === w.id)
+        return {
+          worker_id: w.id,
+          name: w.name,
+          tons: entry ? String(entry.tons_lifted) : '', // Default empty if no entry
+          is_present: entry ? entry.is_present : true, // Default PRESENT if new
+          is_saved: !!entry // Mark as saved if entry exists
+        }
+      })
+
+      setEntries(merged)
+    } catch (error) {
+      console.error('Error:', error)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleToggleAttendance = (index: number) => {
+    const newEntries = [...entries]
+    const current = newEntries[index].is_present
 
-    const { error } = await supabase
-      .from('daily_tons')
-      .insert([{
-        worker_id: formData.worker_id,
-        date: selectedDate,
-        tons_lifted: parseFloat(formData.tons_lifted),
-        notes: formData.notes || null
-      }])
+    // Toggle logic
+    newEntries[index].is_present = !current
 
-    if (!error) {
-      alert('Tons entry added successfully!')
-      setFormData({ worker_id: '', tons_lifted: '', notes: '' })
-      fetchDailyTons()
+    // If marking Absent, clear tons automatically (logic: Absent = 0 tons)
+    if (current === true) { // Was Present, now becoming Absent
+        newEntries[index].tons = '0'
     } else {
-      if (error.code === '23505') {
-        alert('Entry already exists for this worker today. Please edit or delete existing entry.')
-      } else {
-        alert('Error: ' + error.message)
-      }
+        // Was Absent, becoming Present -> leave tons empty/0
+        if (newEntries[index].tons === '0') newEntries[index].tons = ''
+    }
+
+    newEntries[index].is_saved = false // Mark as dirty
+    setEntries(newEntries)
+  }
+
+  const handleTonsChange = (index: number, val: string) => {
+    const newEntries = [...entries]
+    newEntries[index].tons = val
+
+    // If typing tons > 0, auto-mark Present
+    if (Number(val) > 0) {
+        newEntries[index].is_present = true
+    }
+
+    newEntries[index].is_saved = false
+    setEntries(newEntries)
+  }
+
+  const handleSaveAll = async () => {
+    setSaving(true)
+    try {
+        // Filter out entries that haven't changed?
+        // For simplicity, we upsert ALL to ensure consistency
+
+        const upsertData = entries.map(e => ({
+            worker_id: e.worker_id,
+            date: date,
+            tons_lifted: Number(e.tons) || 0,
+            is_present: e.is_present
+        }))
+
+        const { error } = await supabase
+            .from('daily_tons')
+            .upsert(upsertData, { onConflict: 'worker_id, date' })
+
+        if (error) throw error
+
+        // Update UI to show "Saved" state
+        setEntries(prev => prev.map(e => ({ ...e, is_saved: true })))
+
+        await logActivity('DAILY_ENTRY', `Updated attendance/tons for ${entries.length} workers on ${date}`)
+        alert('✅ Attendance & Tons Saved Successfully!')
+
+    } catch (error: any) {
+        alert('Error saving: ' + error.message)
+    } finally {
+        setSaving(false)
     }
   }
 
-  const deleteEntry = async (id: string) => {
-    if (!confirm('Delete this entry?')) return
+  // Filter for Search
+  const visibleEntries = entries.filter(e =>
+    e.name.toLowerCase().includes(searchTerm.toLowerCase())
+  )
 
-    const { error } = await supabase
-      .from('daily_tons')
-      .delete()
-      .eq('id', id)
-
-    if (!error) {
-      fetchDailyTons()
-    }
-  }
-
-  const totalTons = dailyTons.reduce((sum, item) => sum + Number(item.tons_lifted), 0)
-  const totalRevenue = totalTons * 167
-
-  if (loading) {
-    return <div className="min-h-screen bg-gray-50 flex items-center justify-center">Loading...</div>
-  }
+  // Stats
+  const presentCount = entries.filter(e => e.is_present).length
+  const totalTons = entries.reduce((sum, e) => sum + (Number(e.tons) || 0), 0)
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold text-gray-900">Daily Tons Entry</h1>
-            <Link href="/dashboard" className="text-sm text-indigo-600 hover:text-indigo-700">
-              ← Back to Dashboard
-            </Link>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-gray-50 pb-20"> {/* pb-20 for bottom bar */}
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Date Selector & Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <div className="bg-white p-6 rounded-xl shadow-sm">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Select Date</label>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
+        {/* Top Header (Sticky) */}
+        <div className="bg-white shadow-sm sticky top-0 z-10">
+            <div className="max-w-3xl mx-auto px-4 py-4">
+                <div className="flex justify-between items-center mb-4">
+                    <div className="flex items-center gap-2">
+                        <Link href="/dashboard" className="text-gray-400">
+                            <ArrowLeft className="w-6 h-6" />
+                        </Link>
+                        <h1 className="text-xl font-bold text-gray-900">Daily Entry</h1>
+                    </div>
+                    <div className="text-right">
+                         <div className="text-xs text-gray-500 uppercase font-bold">Total Tons</div>
+                         <div className="text-xl font-bold text-indigo-600">{totalTons.toFixed(2)}</div>
+                    </div>
+                </div>
 
-          <div className="bg-blue-50 p-6 rounded-xl">
-            <p className="text-sm text-gray-900 font-medium mb-1">
-Total Tons</p>
-            <p className="text-3xl font-bold text-blue-600">{totalTons.toFixed(2)}</p>
-          </div>
+                {/* Date Picker & Search */}
+                <div className="flex gap-3">
+                    <div className="relative flex-1">
+                        <Calendar className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
+                        <input
+                            type="date"
+                            value={date}
+                            onChange={(e) => setDate(e.target.value)}
+                            className="w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                        />
+                    </div>
+                    <div className="relative flex-1">
+                         <Search className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
+                         <input
+                            type="text"
+                            placeholder="Search..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                         />
+                    </div>
+                </div>
 
-          <div className="bg-green-50 p-6 rounded-xl">
-            <p className="text-sm text-gray-900 font-medium mb-1">
-Revenue (@ ₹167/ton)</p>
-            <p className="text-3xl font-bold text-green-600">₹{totalRevenue.toLocaleString('en-IN')}</p>
-          </div>
-        </div>
-
-        {/* Add Entry Form */}
-        <div className="bg-white p-6 rounded-xl shadow-sm mb-6">
-          <h2 className="text-xl font-semibold mb-4">Add Tons Entry for {format(new Date(selectedDate), 'dd MMM yyyy')}</h2>
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Worker *</label>
-              <select
-                required
-                value={formData.worker_id}
-                onChange={(e) => setFormData({...formData, worker_id: e.target.value})}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="">Select Worker</option>
-                {workers.map((worker) => (
-                  <option key={worker.id} value={worker.id}>{worker.name}</option>
-                ))}
-              </select>
+                {/* Stats Bar */}
+                <div className="mt-3 flex justify-between text-xs font-medium text-gray-500">
+                     <span>Workers: {entries.length}</span>
+                     <span className="text-green-600">Present: {presentCount}</span>
+                     <span className="text-red-500">Absent: {entries.length - presentCount}</span>
+                </div>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Tons Lifted *</label>
-              <input
-                type="number"
-                step="0.01"
-                required
-                value={formData.tons_lifted}
-                onChange={(e) => setFormData({...formData, tons_lifted: e.target.value})}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                placeholder="0.00"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-              <input
-                type="text"
-                value={formData.notes}
-                onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                placeholder="Optional"
-              />
-            </div>
-
-            <div className="flex items-end">
-              <button
-                type="submit"
-                className="w-full bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-semibold"
-              >
-                Add Entry
-              </button>
-            </div>
-          </form>
         </div>
 
-        {/* Entries List */}
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-6">
-            <h2 className="text-xl font-semibold">Entries for {format(new Date(selectedDate), 'dd MMM yyyy')} ({dailyTons.length})</h2>
-          </div>
+        {/* List of Workers */}
+        <div className="max-w-3xl mx-auto px-4 py-6 space-y-3">
+            {loading ? (
+                <div className="text-center py-10 text-gray-400">Loading workers...</div>
+            ) : visibleEntries.map((entry, index) => {
+                // Find original index in full list to update state correctly
+                const realIndex = entries.findIndex(e => e.worker_id === entry.worker_id)
 
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Worker</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Tons Lifted</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Revenue</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Notes</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dailyTons.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-8 text-center text-gray-500">
-                      No entries for this date. Add entries above.
-                    </td>
-                  </tr>
+                return (
+                    <div
+                        key={entry.worker_id}
+                        className={`bg-white p-4 rounded-xl border flex items-center justify-between shadow-sm transition-all ${
+                            !entry.is_present ? 'opacity-70 bg-gray-50' : 'border-gray-100'
+                        }`}
+                    >
+                        {/* Left: Name & Status */}
+                        <div className="flex items-center gap-4">
+                            <button
+                                onClick={() => handleToggleAttendance(realIndex)}
+                                className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
+                                    entry.is_present
+                                    ? 'bg-green-100 text-green-600 hover:bg-green-200'
+                                    : 'bg-red-100 text-red-500 hover:bg-red-200'
+                                }`}
+                            >
+                                {entry.is_present ? <CheckCircle className="w-6 h-6" /> : <XCircle className="w-6 h-6" />}
+                            </button>
+
+                            <div>
+                                <h3 className={`font-bold text-gray-900 ${!entry.is_present && 'line-through text-gray-400'}`}>
+                                    {entry.name}
+                                </h3>
+                                <p className="text-xs font-medium text-gray-500">
+                                    {entry.is_present ? 'Present' : 'Absent'}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Right: Tons Input */}
+                        <div className="relative">
+                            <input
+                                type="number"
+                                placeholder="0"
+                                value={entry.tons}
+                                onChange={(e) => handleTonsChange(realIndex, e.target.value)}
+                                disabled={!entry.is_present} // Cannot enter tons if Absent
+                                className={`w-24 py-2 px-3 text-right font-bold text-lg rounded-lg border outline-none focus:ring-2 focus:ring-indigo-500 ${
+                                    !entry.is_present ? 'bg-gray-100 text-gray-400 border-transparent' : 'border-gray-300'
+                                }`}
+                            />
+                            <span className="absolute right-8 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none hidden">T</span>
+                        </div>
+                    </div>
+                )
+            })}
+        </div>
+
+        {/* Bottom Floating Save Button */}
+        <div className="fixed bottom-6 left-0 right-0 px-4 z-20 flex justify-center">
+            <button
+                onClick={handleSaveAll}
+                disabled={saving}
+                className="max-w-md w-full bg-indigo-600 text-white font-bold py-4 rounded-2xl shadow-xl hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+                {saving ? (
+                    'Saving...'
                 ) : (
-                  dailyTons.map((entry) => (
-                    <tr key={entry.id} className="border-t hover:bg-gray-50">
-                      <td className="py-3 px-4 text-sm font-medium">{entry.worker_name}</td>
-                      <td className="py-3 px-4 text-sm">{Number(entry.tons_lifted).toFixed(2)} tons</td>
-                      <td className="py-3 px-4 text-sm">₹{(Number(entry.tons_lifted) * 167).toLocaleString('en-IN')}</td>
-                      <td className="py-3 px-4 text-sm">{entry.notes || '-'}</td>
-                      <td className="py-3 px-4 text-sm">
-                        <button
-                          onClick={() => deleteEntry(entry.id)}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                    <>
+                        <Save className="w-5 h-5" />
+                        Save {entries.filter(e => !e.is_saved).length > 0 ? 'Changes' : 'All'}
+                    </>
                 )}
-              </tbody>
-            </table>
-          </div>
+            </button>
         </div>
-      </main>
+
     </div>
   )
 }

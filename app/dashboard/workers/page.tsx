@@ -1,240 +1,159 @@
 'use client'
 
-import type { Worker } from '@/lib/supabase'
+import { logActivity } from '@/lib/logger'
 import { supabase } from '@/lib/supabase'
-import Link from 'next/link'
 import { useEffect, useState } from 'react'
+
+type Worker = {
+  id: string, name: string, role: string, phone: string,
+  base_salary: number, status: string,
+  bank_account?: string, ifsc?: string, joined_date?: string
+}
 
 export default function WorkersPage() {
   const [workers, setWorkers] = useState<Worker[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showAddForm, setShowAddForm] = useState(false)
+  const [showModal, setShowModal] = useState(false)
+  const [editingWorker, setEditingWorker] = useState<Worker | null>(null)
+
+  // Form State
   const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-    account_number: '',
-    role: 'worker' as 'worker' | 'supervisor',
-    base_salary: 20000
+    name: '', role: 'worker', phone: '', base_salary: '',
+    status: 'active', bank_account: '', ifsc: '', joined_date: ''
   })
 
-  useEffect(() => {
-    fetchWorkers()
-  }, [])
+  useEffect(() => { fetchWorkers() }, [])
 
   const fetchWorkers = async () => {
-    const { data, error } = await supabase
-      .from('workers')
-      .select('*')
-      .order('created_at', { ascending: false })
-
+    const { data } = await supabase.from('workers').select('*').order('name')
     if (data) setWorkers(data)
-    setLoading(false)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleEdit = (worker: Worker) => {
+    setEditingWorker(worker)
+    setFormData({
+      name: worker.name, role: worker.role, phone: worker.phone || '',
+      base_salary: worker.base_salary.toString(), status: worker.status,
+      bank_account: worker.bank_account || '', ifsc: worker.ifsc || '',
+      joined_date: worker.joined_date || ''
+    })
+    setShowModal(true)
+  }
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
+    try {
+      const payload = {
+        name: formData.name, role: formData.role, phone: formData.phone,
+        base_salary: parseFloat(formData.base_salary), status: formData.status,
+        bank_account: formData.bank_account, ifsc: formData.ifsc, joined_date: formData.joined_date
+      }
 
-    const { error } = await supabase
-      .from('workers')
-      .insert([{
-        ...formData,
-        status: 'active'
-      }])
+      if (editingWorker) {
+        // UPDATE Existing
+        await supabase.from('workers').update(payload).eq('id', editingWorker.id)
+        await logActivity('UPDATE_WORKER', `Updated worker: ${formData.name}`)
+      } else {
+        // INSERT New
+        await supabase.from('workers').insert({ ...payload, status: 'active' })
+        await logActivity('ADD_WORKER', `Added new worker: ${formData.name}`)
+      }
 
-    if (!error) {
-      alert('Worker added successfully!')
-      setShowAddForm(false)
-      setFormData({ name: '', phone: '', account_number: '', role: 'worker', base_salary: 20000 })
+      setShowModal(false)
+      setEditingWorker(null)
+      setFormData({ name: '', role: 'worker', phone: '', base_salary: '', status: 'active', bank_account: '', ifsc: '', joined_date: '' })
       fetchWorkers()
-    } else {
-      alert('Error adding worker: ' + error.message)
+    } catch (error) {
+      alert('Error saving worker')
     }
-  }
-
-  const toggleStatus = async (id: string, currentStatus: string) => {
-    const newStatus = currentStatus === 'active' ? 'inactive' : 'active'
-
-    const { error } = await supabase
-      .from('workers')
-      .update({ status: newStatus })
-      .eq('id', id)
-
-    if (!error) {
-      fetchWorkers()
-    }
-  }
-
-  const deleteWorker = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete ${name}?`)) return
-
-    const { error } = await supabase
-      .from('workers')
-      .delete()
-      .eq('id', id)
-
-    if (!error) {
-      alert('Worker deleted successfully')
-      fetchWorkers()
-    }
-  }
-
-  if (loading) {
-    return <div className="min-h-screen bg-gray-50 flex items-center justify-center">Loading...</div>
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold text-gray-900">Worker Management</h1>
-            <Link href="/dashboard" className="text-sm text-indigo-600 hover:text-indigo-700">
-              ← Back to Dashboard
-            </Link>
-          </div>
-        </div>
-      </header>
+    <div className="p-8">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Manage Workers</h1>
+        <button onClick={() => { setEditingWorker(null); setShowModal(true) }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 shadow-sm">
+          + Add Worker
+        </button>
+      </div>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Add Worker Button */}
-        <div className="mb-6">
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg font-semibold"
-          >
-            {showAddForm ? '✕ Cancel' : '+ Add New Worker'}
-          </button>
-        </div>
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Details</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact & Bank</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {workers.map((worker) => (
+              <tr key={worker.id} className="hover:bg-gray-50">
+                <td className="px-6 py-4">
+                  <div className="font-bold text-gray-900">{worker.name}</div>
+                  <div className="text-sm text-gray-500">{worker.role} • Salary: ₹{worker.base_salary}</div>
+                </td>
+                <td className="px-6 py-4 text-sm text-gray-600">
+                  <div>📞 {worker.phone || 'N/A'}</div>
+                  <div className="text-xs text-gray-400 mt-1">Bank: {worker.bank_account || 'N/A'}</div>
+                </td>
+                <td className="px-6 py-4">
+                  <span className={`px-2 py-1 text-xs font-semibold rounded-full ${worker.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                    {worker.status}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-right">
+                  <button onClick={() => handleEdit(worker)} className="text-indigo-600 hover:text-indigo-900 font-medium text-sm">
+                    Edit / View
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-        {/* Add Worker Form */}
-        {showAddForm && (
-          <div className="bg-white p-6 rounded-xl shadow-sm mb-6">
-            <h2 className="text-xl font-semibold mb-4">Add New Worker</h2>
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                />
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white p-6 rounded-lg w-full max-w-lg shadow-xl">
+            <h2 className="text-xl font-bold mb-4">{editingWorker ? 'Edit Worker' : 'Add New Worker'}</h2>
+            <form onSubmit={handleSave} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <input required placeholder="Name" className="border p-2 rounded" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+                <input required type="tel" placeholder="Phone" className="border p-2 rounded" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                <input
-                  type="tel"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Account Number</label>
-                <input
-                  type="text"
-                  value={formData.account_number}
-                  onChange={(e) => setFormData({...formData, account_number: e.target.value})}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
-                <select
-                  value={formData.role}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    role: e.target.value as 'worker' | 'supervisor',
-                    base_salary: e.target.value === 'supervisor' ? 40000 : 20000
-                  })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                >
-                  <option value="worker">Worker (₹20,000)</option>
-                  <option value="supervisor">Supervisor (₹40,000)</option>
+              <div className="grid grid-cols-2 gap-4">
+                <select className="border p-2 rounded" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}>
+                  <option value="worker">Worker</option>
+                  <option value="supervisor">Supervisor</option>
                 </select>
+                <input required type="number" placeholder="Base Salary" className="border p-2 rounded" value={formData.base_salary} onChange={e => setFormData({...formData, base_salary: e.target.value})} />
               </div>
-
-              <div className="md:col-span-2">
-                <button
-                  type="submit"
-                  className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-semibold"
-                >
-                  Add Worker
-                </button>
+              <div className="grid grid-cols-2 gap-4">
+                <input placeholder="Bank Account Number" className="border p-2 rounded" value={formData.bank_account} onChange={e => setFormData({...formData, bank_account: e.target.value})} />
+                <input placeholder="IFSC Code" className="border p-2 rounded" value={formData.ifsc} onChange={e => setFormData({...formData, ifsc: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Joined Date</label>
+                <input type="date" className="border p-2 rounded w-full" value={formData.joined_date} onChange={e => setFormData({...formData, joined_date: e.target.value})} />
+              </div>
+              {editingWorker && (
+                <div>
+                   <label className="block text-xs text-gray-500 mb-1">Status</label>
+                   <select className="border p-2 rounded w-full" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
+                     <option value="active">Active</option>
+                     <option value="inactive">Inactive (Fired/Left)</option>
+                   </select>
+                </div>
+              )}
+              <div className="flex gap-2 pt-2">
+                <button type="submit" className="flex-1 bg-indigo-600 text-white py-2 rounded">Save</button>
+                <button type="button" onClick={() => setShowModal(false)} className="flex-1 bg-gray-200 text-gray-800 py-2 rounded">Cancel</button>
               </div>
             </form>
           </div>
-        )}
-
-        {/* Workers List */}
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-6">
-            <h2 className="text-xl font-semibold mb-4">All Workers ({workers.length})</h2>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Name</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Role</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Phone</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Account</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Salary</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Status</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {workers.map((worker) => (
-                  <tr key={worker.id} className="border-t hover:bg-gray-50">
-                    <td className="py-3 px-4 text-sm font-medium">{worker.name}</td>
-                    <td className="py-3 px-4 text-sm">
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        worker.role === 'supervisor'
-                          ? 'bg-purple-100 text-purple-700'
-                          : 'bg-blue-100 text-blue-700'
-                      }`}>
-                        {worker.role}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-sm">{worker.phone || '-'}</td>
-                    <td className="py-3 px-4 text-sm">{worker.account_number || '-'}</td>
-                    <td className="py-3 px-4 text-sm">₹{worker.base_salary.toLocaleString('en-IN')}</td>
-                    <td className="py-3 px-4 text-sm">
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        worker.status === 'active'
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-red-100 text-red-700'
-                      }`}>
-                        {worker.status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-sm">
-                      <button
-                        onClick={() => toggleStatus(worker.id, worker.status)}
-                        className="text-blue-600 hover:text-blue-700 mr-3"
-                      >
-                        {worker.status === 'active' ? 'Deactivate' : 'Activate'}
-                      </button>
-                      <button
-                        onClick={() => deleteWorker(worker.id, worker.name)}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         </div>
-      </main>
+      )}
     </div>
   )
 }

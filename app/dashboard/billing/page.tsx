@@ -1,257 +1,213 @@
 'use client'
 
+import AdminGuard from '@/components/AdminGuard'
+import { logActivity } from '@/lib/logger'
 import { supabase } from '@/lib/supabase'
+import { ArrowLeft, CheckCircle, FileText, Printer } from 'lucide-react'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 export default function BillingPage() {
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  const [month, setMonth] = useState(new Date().getMonth() + 1)
+  const [year, setYear] = useState(new Date().getFullYear())
   const [loading, setLoading] = useState(false)
-  const [stats, setStats] = useState({
-    totalTons: 0,
-    revenue: 0,
-    workerCount: 0,
-    foodStayExpense: 0,
-    totalSalaryPaid: 0,
-    netProfit: 0
-  })
+  const [billData, setBillData] = useState<{ totalTons: number, totalAmount: number } | null>(null)
 
-  useEffect(() => {
-    calculateMonthlyStats()
-  }, [selectedMonth, selectedYear])
+  // Editable Rate State (Default 167)
+  const [ratePerTon, setRatePerTon] = useState(167)
 
-  const calculateMonthlyStats = async () => {
+  const MONTHS = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const handleGenerateBill = async () => {
     setLoading(true)
-
     try {
-      // Get total tons for the month
-      const monthStart = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`
-      const nextMonth = selectedMonth === 12 ? 1 : selectedMonth + 1
-      const nextYear = selectedMonth === 12 ? selectedYear + 1 : selectedYear
-      const monthEnd = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`
+      // 1. Strict Date Logic (Matches Salary/Reports Page)
+      const yearStr = year.toString()
+      const monthStr = String(month).padStart(2, '0')
+      const startDate = `${yearStr}-${monthStr}-01`
+      const lastDay = new Date(year, month, 0).getDate()
+      const endDate = `${yearStr}-${monthStr}-${lastDay}`
 
-      const { data: tonsData } = await supabase
+      console.log(`Generating Bill: ${startDate} to ${endDate} @ ₹${ratePerTon}/ton`)
+
+      // 2. Fetch Tons
+      const { data, error } = await supabase
         .from('daily_tons')
-        .select('tons_lifted')
-        .gte('date', monthStart)
-        .lt('date', monthEnd)
+        .select('tons_lifted, date')
+        .gte('date', startDate)
+        .lte('date', endDate)
 
-      const totalTons = tonsData?.reduce((sum, item) => sum + Number(item.tons_lifted), 0) || 0
-      const revenue = totalTons * 167
+      if (error) throw error
 
-      // Get active worker count
-      const { data: workersData } = await supabase
-        .from('workers')
-        .select('id, role')
-        .eq('status', 'active')
+      // 3. Calculate
+      const totalTons = data?.reduce((sum, item) => sum + Number(item.tons_lifted), 0) || 0
+      const totalAmount = totalTons * ratePerTon
 
-      const workerCount = workersData?.filter(w => w.role === 'worker').length || 0
-      const supervisorCount = workersData?.filter(w => w.role === 'supervisor').length || 0
+      setBillData({ totalTons, totalAmount })
 
-      // Calculate food & stay expense (192 per head per day * 30 days)
-      const foodStayExpense = (workerCount + supervisorCount) * 192 * 30
+      await logActivity('GENERATE_BILL', `Generated Bill for ${MONTHS[month-1]} ${year}. Total: ₹${totalAmount.toFixed(2)}`)
 
-      // Get salary payments
-      const { data: salaryData } = await supabase
-        .from('salary_payments')
-        .select('net_salary')
-        .eq('month', selectedMonth)
-        .eq('year', selectedYear)
-
-      const totalSalaryPaid = salaryData?.reduce((sum, item) => sum + Number(item.net_salary), 0) || 0
-
-      const netProfit = revenue - foodStayExpense - totalSalaryPaid
-
-      setStats({
-        totalTons,
-        revenue,
-        workerCount: workerCount + supervisorCount,
-        foodStayExpense,
-        totalSalaryPaid,
-        netProfit
-      })
     } catch (error) {
-      console.error('Error calculating stats:', error)
+      console.error(error)
+      alert('Error generating bill.')
     } finally {
       setLoading(false)
     }
   }
 
-  const getMonthName = (month: number) => {
-    return new Date(2025, month - 1).toLocaleString('default', { month: 'long' })
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold text-gray-900">Monthly Billing & Reports</h1>
-            <Link href="/dashboard" className="text-sm text-indigo-600 hover:text-indigo-700">
-              ← Back to Dashboard
-            </Link>
+    <AdminGuard>
+      <div className="min-h-screen bg-gray-50 p-6 print:bg-white print:p-0">
+        <div className="max-w-4xl mx-auto">
+
+          {/* Header */}
+          <div className="flex justify-between items-center mb-8 print:hidden">
+             <div>
+               <div className="flex items-center gap-2 mb-1">
+                 <Link href="/dashboard" className="text-gray-400 hover:text-gray-600 transition-colors">
+                    <ArrowLeft className="w-6 h-6" />
+                 </Link>
+                 <h1 className="text-2xl font-bold text-gray-900">Monthly Billing</h1>
+               </div>
+               <p className="text-sm text-gray-500 ml-8">Generate invoice data for HUL Payment</p>
+             </div>
           </div>
-        </div>
-      </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Month/Year Selector */}
-        <div className="bg-white p-6 rounded-xl shadow-sm mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Select Month</label>
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-              >
-                {Array.from({length: 12}, (_, i) => i + 1).map(m => (
-                  <option key={m} value={m}>{getMonthName(m)}</option>
-                ))}
-              </select>
-            </div>
+          {/* Controls Section */}
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8 print:hidden">
+             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Select Year</label>
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value={2024}>2024</option>
-                <option value={2025}>2025</option>
-                <option value={2026}>2026</option>
-                <option value={2027}>2027</option>
-              </select>
-            </div>
+                {/* Month Select */}
+                <div>
+                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Month</label>
+                   <select
+                      value={month}
+                      onChange={e => setMonth(parseInt(e.target.value))}
+                      className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-green-500 outline-none font-medium text-gray-700"
+                   >
+                      {MONTHS.map((m, index) => (
+                        <option key={index + 1} value={index + 1}>{m}</option>
+                      ))}
+                   </select>
+                </div>
+
+                {/* Year Select */}
+                <div>
+                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Year</label>
+                   <select
+                      value={year}
+                      onChange={e => setYear(parseInt(e.target.value))}
+                      className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-green-500 outline-none font-medium text-gray-700"
+                   >
+                      <option value={2024}>2024</option>
+                      <option value={2025}>2025</option>
+                   </select>
+                </div>
+
+                {/* Rate Input (NEW) */}
+                <div>
+                   <label className="block text-xs font-bold text-green-700 uppercase tracking-wide mb-1">Rate (₹/Ton)</label>
+                   <div className="relative">
+                     <span className="absolute left-3 top-2.5 text-green-600 font-bold">₹</span>
+                     <input
+                        type="number"
+                        value={ratePerTon}
+                        onChange={(e) => setRatePerTon(Number(e.target.value))}
+                        className="w-full pl-7 pr-3 py-2.5 border border-green-300 bg-green-50 rounded-lg focus:ring-2 focus:ring-green-500 outline-none font-bold text-green-800"
+                     />
+                   </div>
+                </div>
+
+                {/* Generate Button */}
+                <button
+                    onClick={handleGenerateBill}
+                    disabled={loading}
+                    className="bg-green-600 text-white px-6 py-2.5 rounded-lg hover:bg-green-700 disabled:opacity-50 font-bold transition-colors shadow-sm flex items-center justify-center gap-2"
+                >
+                  {loading ? 'Calculating...' : <><FileText className="w-4 h-4" /> Generate Bill</>}
+                </button>
+             </div>
           </div>
+
+          {/* Results Section */}
+          {billData ? (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden print:shadow-none print:border">
+
+                {/* Bill Header */}
+                <div className="bg-green-50/50 px-8 py-6 border-b border-green-100 flex justify-between items-center print:bg-white print:px-0">
+                  <div>
+                    <h3 className="font-bold text-2xl text-green-900">Billing Summary</h3>
+                    <p className="text-gray-500 font-medium">{MONTHS[month-1]} {year}</p>
+                  </div>
+                  <div className="flex items-center gap-2 bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide print:hidden">
+                    <CheckCircle className="w-3 h-3" /> Ready to Invoice
+                  </div>
+                </div>
+
+                <div className="p-8 print:px-0">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                      {/* Left: Quantity */}
+                      <div className="p-6 rounded-xl border border-dashed border-gray-300 bg-gray-50/50">
+                          <p className="text-sm text-gray-500 font-bold uppercase tracking-wide mb-2">Total Quantity</p>
+                          <div className="flex items-baseline gap-2">
+                             <span className="text-4xl font-bold text-gray-900">{billData.totalTons.toFixed(3)}</span>
+                             <span className="text-lg text-gray-400 font-medium">Metric Tons</span>
+                          </div>
+                      </div>
+
+                      {/* Right: Amount */}
+                      <div className="p-6 rounded-xl border border-green-200 bg-green-50">
+                          <p className="text-sm text-green-800 font-bold uppercase tracking-wide mb-2">Billable Amount</p>
+                          <div className="flex items-baseline gap-1">
+                             <span className="text-4xl font-bold text-green-700">₹{billData.totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                          </div>
+                          <div className="text-xs text-green-600 mt-2 font-medium">
+                            Based on Contract Rate: ₹{ratePerTon} / Ton
+                          </div>
+                      </div>
+                  </div>
+
+                  {/* Print Footer */}
+                  <div className="border-t border-gray-100 pt-8 text-center print:hidden">
+                    <button
+                      onClick={() => window.print()}
+                      className="text-gray-500 hover:text-indigo-600 font-medium flex items-center justify-center gap-2 mx-auto transition-colors"
+                    >
+                      <Printer className="w-4 h-4" /> Print Statement
+                    </button>
+                  </div>
+
+                  {/* Printable Signature Area (Only shows when printing) */}
+                  <div className="hidden print:block mt-20 pt-8 border-t border-gray-300">
+                     <div className="flex justify-between text-sm text-gray-600">
+                        <div className="text-center">
+                           <p className="mb-12">Authorized Signatory</p>
+                           <p className="font-bold">Unified Excellance</p>
+                        </div>
+                        <div className="text-center">
+                           <p className="mb-12">Received By</p>
+                           <p className="font-bold">HUL Representative</p>
+                        </div>
+                     </div>
+                  </div>
+
+                </div>
+              </div>
+          ) : (
+            <div className="text-center py-16 bg-white rounded-xl border border-dashed border-gray-300">
+                <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                   <FileText className="w-8 h-8 text-gray-300" />
+                </div>
+                <h3 className="text-gray-900 font-medium text-lg">No Bill Generated</h3>
+                <p className="text-gray-500 text-sm mt-1">Select a month and click "Generate Bill" to see details.</p>
+            </div>
+          )}
+
         </div>
-
-        {loading ? (
-          <div className="text-center py-12">Loading...</div>
-        ) : (
-          <>
-            {/* Revenue Section */}
-            <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-              <h2 className="text-xl font-semibold mb-4">📊 Revenue from HUL</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-blue-50 p-6 rounded-xl">
-                  <p className="text-sm text-gray-900 font-medium mb-1">
-Total Tons Lifted</p>
-                  <p className="text-3xl font-bold text-blue-600">{stats.totalTons.toFixed(2)}</p>
-                </div>
-
-                <div className="bg-green-50 p-6 rounded-xl">
-                  <p className="text-sm text-gray-900 font-medium mb-1">
-Rate per Ton</p>
-                  <p className="text-3xl font-bold text-green-600">₹167</p>
-                </div>
-
-                <div className="bg-green-50 p-6 rounded-xl border-2 border-green-600">
-                  <p className="text-sm text-gray-900 font-medium mb-1">
-Total Revenue</p>
-                  <p className="text-3xl font-bold text-green-600">₹{stats.revenue.toLocaleString('en-IN')}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Expenses Section */}
-            <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-              <h2 className="text-xl font-semibold mb-4">💸 Expenses</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-orange-50 p-6 rounded-xl">
-                  <p className="text-sm text-gray-900 font-medium mb-1">
-Food & Stay</p>
-                  <p className="text-xl font-bold text-orange-600">₹{stats.foodStayExpense.toLocaleString('en-IN')}</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {stats.workerCount} people × ₹192/day × 30 days
-                  </p>
-                </div>
-
-                <div className="bg-red-50 p-6 rounded-xl">
-                  <p className="text-sm text-gray-900 font-medium mb-1">
-Salaries Paid</p>
-                  <p className="text-xl font-bold text-red-600">₹{stats.totalSalaryPaid.toLocaleString('en-IN')}</p>
-                  <p className="text-xs text-gray-500 mt-1">Net amount after advances</p>
-                </div>
-
-                <div className="bg-red-50 p-6 rounded-xl border-2 border-red-600">
-                  <p className="text-sm text-gray-900 font-medium mb-1">
-Total Expenses</p>
-                  <p className="text-xl font-bold text-red-600">
-                    ₹{(stats.foodStayExpense + stats.totalSalaryPaid).toLocaleString('en-IN')}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Profit Section */}
-            <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl shadow-lg p-8 text-white mb-6">
-              <div className="text-center">
-                <p className="text-lg mb-2 opacity-90">Net Profit for {getMonthName(selectedMonth)} {selectedYear}</p>
-                <p className="text-5xl font-bold mb-4">₹{stats.netProfit.toLocaleString('en-IN')}</p>
-                <p className="text-sm opacity-80">Revenue - Food/Stay - Salaries = Profit</p>
-              </div>
-            </div>
-
-            {/* Breakdown Table */}
-            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <div className="p-6">
-                <h2 className="text-xl font-semibold">Detailed Breakdown</h2>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Item</th>
-                      <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">Amount (₹)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-t">
-                      <td className="py-3 px-4 text-sm font-medium text-green-700">Revenue from HUL ({stats.totalTons.toFixed(2)} tons × ₹167)</td>
-                      <td className="py-3 px-4 text-sm text-right font-bold text-green-700">
-                        + {stats.revenue.toLocaleString('en-IN')}
-                      </td>
-                    </tr>
-                    <tr className="border-t bg-red-50">
-                      <td className="py-3 px-4 text-sm text-red-700">Food & Stay Expense</td>
-                      <td className="py-3 px-4 text-sm text-right text-red-700">
-                        - {stats.foodStayExpense.toLocaleString('en-IN')}
-                      </td>
-                    </tr>
-                    <tr className="border-t bg-red-50">
-                      <td className="py-3 px-4 text-sm text-red-700">Salary Payments (Net)</td>
-                      <td className="py-3 px-4 text-sm text-right text-red-700">
-                        - {stats.totalSalaryPaid.toLocaleString('en-IN')}
-                      </td>
-                    </tr>
-                    <tr className="border-t bg-indigo-50">
-                      <td className="py-3 px-4 text-sm font-bold text-indigo-900">NET PROFIT</td>
-                      <td className="py-3 px-4 text-sm text-right font-bold text-indigo-900 text-lg">
-                        = {stats.netProfit.toLocaleString('en-IN')}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Important Notes */}
-            <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <h3 className="font-semibold text-yellow-900 mb-2">📝 Important Notes:</h3>
-              <ul className="text-sm text-yellow-800 space-y-1">
-                <li>• HUL pays you ₹167 per ton at month end</li>
-                <li>• HUL also pays ₹3,000 directly to each worker (not included in your revenue)</li>
-                <li>• You pay food & stay (₹192/day/person) at month beginning</li>
-                <li>• You pay net salary (base - advances) to workers</li>
-                <li>• Supervisor gets ₹40,000, regular workers get ₹20,000</li>
-              </ul>
-            </div>
-          </>
-        )}
-      </main>
-    </div>
+      </div>
+    </AdminGuard>
   )
 }

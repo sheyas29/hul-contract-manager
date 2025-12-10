@@ -1,47 +1,61 @@
 import Link from 'next/link'
 
-export default function Home() {
+export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="max-w-4xl w-full bg-white rounded-2xl shadow-2xl p-8">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            HUL Contract Manager
-          </h1>
-          <p className="text-gray-600 text-lg">
-            Loading & Unloading Contract Management System
-          </p>
-        </div>
+    <div className="min-h-screen bg-gray-50 flex flex-col">
 
-        <div className="grid md:grid-cols-2 gap-6 mb-8">
-          <div className="bg-blue-50 p-6 rounded-xl">
-            <h3 className="font-semibold text-lg mb-2 text-blue-900">Contract Details</h3>
-            <ul className="text-sm text-gray-700 space-y-1">
-              <li>• 70 Workers + 1 Supervisor</li>
-              <li>• Rate: ₹167 per ton</li>
-              <li>• Worker Salary: ₹20,000/month</li>
-              <li>• Supervisor: ₹40,000/month</li>
-            </ul>
-          </div>
-          
-          <div className="bg-green-50 p-6 rounded-xl">
-            <h3 className="font-semibold text-lg mb-2 text-green-900">Features</h3>
-            <ul className="text-sm text-gray-700 space-y-1">
-              <li>• Daily tons tracking</li>
-              <li>• Advance management</li>
-              <li>• Flexible repayment schedules</li>
-              <li>• Monthly billing & payroll</li>
-            </ul>
-          </div>
+      {/* Simple Navbar */}
+      <nav className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+          <div className="font-bold text-xl text-indigo-900">Unified Excellance</div>
+          <div className="text-sm text-gray-500">HUL Contract Management System</div>
         </div>
+      </nav>
 
-        <Link 
-          href="/dashboard"
-          className="block w-full bg-indigo-600 hover:bg-indigo-700 text-white text-center py-4 rounded-xl font-semibold text-lg transition-colors"
-        >
-          Open Dashboard →
-        </Link>
-      </div>
+      {/* Main Content */}
+      <main className="flex-grow flex items-center justify-center p-6">
+        <div className="max-w-5xl w-full grid md:grid-cols-2 gap-8">
+
+          {/* Admin Card */}
+          <div className="bg-white p-8 rounded-2xl shadow-sm border-2 border-transparent hover:border-indigo-100 transition-all hover:shadow-md group">
+            <div className="w-16 h-16 bg-indigo-100 rounded-xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">
+              👑
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Admin Portal</h2>
+            <p className="text-gray-600 mb-8">
+              For business owners. Access financial reports, billing, and audit logs.
+            </p>
+            <Link
+              href="/login?role=admin"
+              className="block w-full text-center bg-indigo-900 text-white py-3 rounded-xl font-semibold hover:bg-indigo-800 transition-colors"
+            >
+              Login as Admin →
+            </Link>
+          </div>
+
+          {/* Supervisor Card */}
+          <div className="bg-white p-8 rounded-2xl shadow-sm border-2 border-transparent hover:border-orange-100 transition-all hover:shadow-md group">
+            <div className="w-16 h-16 bg-orange-100 rounded-xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">
+              👷
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Supervisor App</h2>
+            <p className="text-gray-600 mb-8">
+              For field supervisors. Manage workers, tons, and petty cash.
+            </p>
+            <Link
+              href="/login?role=supervisor"
+              className="block w-full text-center bg-orange-600 text-white py-3 rounded-xl font-semibold hover:bg-orange-700 transition-colors"
+            >
+              Login as Supervisor →
+            </Link>
+          </div>
+
+        </div>
+      </main>
+
+      <footer className="bg-white border-t border-gray-200 py-6 text-center text-sm text-gray-500">
+        © 2025 Unified Excellance. Restricted Access Only.
+      </footer>
     </div>
   )
 }
