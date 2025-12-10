@@ -98,15 +98,20 @@ export default function DailyEntryPage() {
   const handleSaveAll = async () => {
     setSaving(true)
     try {
-        // Filter out entries that haven't changed?
-        // For simplicity, we upsert ALL to ensure consistency
 
-        const upsertData = entries.map(e => ({
-            worker_id: e.worker_id,
-            date: date,
-            tons_lifted: Number(e.tons) || 0,
-            is_present: e.is_present
-        }))
+        const upsertData = entries.map(e => {
+
+            // ⛔ Validation happens here
+            if (Number(e.tons) > 20)
+                throw new Error(`Error: ${e.name} has unrealistic tons (${e.tons}). Max is 20.`);
+
+            return {
+                worker_id: e.worker_id,
+                date: date,
+                tons_lifted: Number(e.tons) || 0,
+                is_present: e.is_present
+            };
+        });
 
         const { error } = await supabase
             .from('daily_tons')
@@ -114,7 +119,6 @@ export default function DailyEntryPage() {
 
         if (error) throw error
 
-        // Update UI to show "Saved" state
         setEntries(prev => prev.map(e => ({ ...e, is_saved: true })))
 
         await logActivity('DAILY_ENTRY', `Updated attendance/tons for ${entries.length} workers on ${date}`)
@@ -125,7 +129,8 @@ export default function DailyEntryPage() {
     } finally {
         setSaving(false)
     }
-  }
+}
+
 
   // Filter for Search
   const visibleEntries = entries.filter(e =>
@@ -230,6 +235,8 @@ export default function DailyEntryPage() {
                             <input
                                 type="number"
                                 placeholder="0"
+                                min="0"
+                                max="20"
                                 value={entry.tons}
                                 onChange={(e) => handleTonsChange(realIndex, e.target.value)}
                                 disabled={!entry.is_present} // Cannot enter tons if Absent

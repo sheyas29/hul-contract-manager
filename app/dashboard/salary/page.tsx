@@ -35,7 +35,7 @@ export default function SalaryPage() {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
 
   // REVENUE CALCULATION STATE
-  const [contractRate, setContractRate] = useState<number>(180) // Default HUL Rate (Editable)
+  const [contractRate, setContractRate] = useState<number>(167) // Default HUL Rate (Editable)
 
   const [payrollData, setPayrollData] = useState<PayrollRow[]>([])
   const [isLocked, setIsLocked] = useState(false)
@@ -252,13 +252,52 @@ export default function SalaryPage() {
     }
   }
 
-  const handleReset = async () => {
-    if (!confirm('This will DELETE the saved payroll report and RECALCULATE from live data.\n\nNote: This does NOT reverse advance deductions automatically.')) return;
+    const handleReset = async () => {
+    if (!confirm('Warning: This will DELETE the saved report and REVERSE any loan deductions made. Continue?')) return;
+
     setLoading(true);
     try {
-      const { error } = await supabase.from('salary_payments').delete().eq('month', selectedMonth + 1).eq('year', selectedYear);
+      // 1. Fetch the payments we are about to delete to see if any loans need reversing
+      const { data: paymentsToDelete } = await supabase
+        .from('salary_payments')
+        .select('worker_id, advance_deductions')
+        .eq('month', selectedMonth + 1)
+        .eq('year', selectedYear)
+        .gt('advance_deductions', 0) // Only care about those with deductions
+
+      // 2. Reverse the Loan Deductions (Add money back to balance)
+      if (paymentsToDelete && paymentsToDelete.length > 0) {
+        const reversalPromises = paymentsToDelete.map(async (p) => {
+           // Get current loan (active or completed)
+           const { data: adv } = await supabase
+             .from('advances')
+             .select('id, balance')
+             .eq('worker_id', p.worker_id)
+             .order('created_at', { ascending: false }) // Get latest loan
+             .limit(1)
+             .single()
+
+           if (adv) {
+             // ADD the deduction back to the balance
+             await supabase.from('advances').update({
+               balance: adv.balance + p.advance_deductions,
+               status: 'repaying' // Re-open loan if it was marked completed
+             }).eq('id', adv.id)
+           }
+        })
+        await Promise.all(reversalPromises)
+      }
+
+      // 3. Delete the Report
+      const { error } = await supabase
+        .from('salary_payments')
+        .delete()
+        .eq('month', selectedMonth + 1)
+        .eq('year', selectedYear);
+
       if (error) throw error;
-      alert('Report reset! Recalculating...');
+
+      alert('Report reset! Loan balances have been corrected.');
       setIsLocked(false);
       setPayrollData([]);
       window.location.reload();
@@ -267,6 +306,7 @@ export default function SalaryPage() {
       setLoading(false);
     }
   }
+
 
   const handleExport = () => {
     const headers = ['Worker Name', 'Revenue Generated', 'Gross Pay', 'Net Payable'];
