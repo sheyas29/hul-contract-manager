@@ -35,7 +35,7 @@ export default function SalaryPage() {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
 
   // REVENUE CALCULATION STATE
-  const [contractRate, setContractRate] = useState<number>(167) // Default HUL Rate (Editable)
+  const [contractRate, setContractRate] = useState<number>(167) // Default HUL Rate
 
   const [payrollData, setPayrollData] = useState<PayrollRow[]>([])
   const [isLocked, setIsLocked] = useState(false)
@@ -46,17 +46,17 @@ export default function SalaryPage() {
 
   const fetchPayrollData = async () => {
     setLoading(true)
-    console.log(`Fetching for Month: ${selectedMonth + 1}, Year: ${selectedYear}`)
-
     try {
+      // Fetch Active Workers
       const { data: workers, error: workerError } = await supabase
         .from('workers')
-        .select('*')
+        .select('id, name, base_salary')
         .eq('status', 'active')
         .order('name')
 
-      if (workerError) return
+      if (workerError) throw workerError
 
+      // Check for saved payroll
       const { data: savedSalaries } = await supabase
         .from('salary_payments')
         .select('*')
@@ -66,7 +66,7 @@ export default function SalaryPage() {
       if (savedSalaries && savedSalaries.length > 0) {
         setIsLocked(true)
 
-        // Fetch Tons for Context
+        // Fetch Tons for Context (to show performance even on locked records)
         const yearStr = selectedYear.toString()
         const monthStr = String(selectedMonth + 1).padStart(2, '0')
         const startDate = `${yearStr}-${monthStr}-01`
@@ -81,9 +81,9 @@ export default function SalaryPage() {
 
         const formattedData: PayrollRow[] = savedSalaries.map(s => {
           const w = workers?.find(w => String(w.id) === String(s.worker_id))
-
-          const workerTons = historicalTons?.filter(t =>
-            String(t.worker_id).toLowerCase() === String(s.worker_id).toLowerCase()
+          
+          const workerTons = historicalTons?.filter(t => 
+            String(t.worker_id) === String(s.worker_id)
           ) || []
           const totalTons = workerTons.reduce((sum, t) => sum + (Number(t.tons_lifted) || 0), 0)
 
@@ -109,30 +109,27 @@ export default function SalaryPage() {
         if (workers) await calculateFreshPayroll(workers)
       }
     } catch (error) {
-      console.error('CRITICAL ERROR:', error)
+      console.error('Error fetching payroll:', error)
     } finally {
       setLoading(false)
     }
   }
 
-  const calculateFreshPayroll = async (workers: Worker[]) => {
+  const calculateFreshPayroll = async (workers: any[]) => {
     const yearStr = selectedYear.toString()
     const monthStr = String(selectedMonth + 1).padStart(2, '0')
     const startDate = `${yearStr}-${monthStr}-01`
     const lastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate()
     const endDate = `${yearStr}-${monthStr}-${lastDay}`
 
-    const { data: rawTons, error: tonsError } = await supabase
+    // 1. Fetch Performance (Tons)
+    const { data: rawTons } = await supabase
       .from('daily_tons')
-      .select('worker_id, tons_lifted, date')
+      .select('worker_id, tons_lifted')
       .gte('date', startDate)
       .lte('date', endDate)
 
-    if (tonsError) {
-      alert('Error fetching data: ' + tonsError.message)
-      return
-    }
-
+    // 2. Fetch Active Advances
     const { data: advances } = await supabase
       .from('advances')
       .select('*')
@@ -140,23 +137,20 @@ export default function SalaryPage() {
       .gt('balance', 0)
 
     const rows: PayrollRow[] = workers.map(worker => {
-      const workerTons = rawTons?.filter(t =>
-        String(t.worker_id).toLowerCase() === String(worker.id).toLowerCase()
-      ) || []
-
+      // Calculate Performance
+      const workerTons = rawTons?.filter(t => String(t.worker_id) === String(worker.id)) || []
       const totalTons = workerTons.reduce((sum, t) => sum + (Number(t.tons_lifted) || 0), 0)
 
-      const activeAdvance = advances?.find(a =>
-        String(a.worker_id).toLowerCase() === String(worker.id).toLowerCase()
-      )
-
+      // Calculate Advance Deduction (20% rule or max 2000, rounded to 100)
+      const activeAdvance = advances?.find(a => String(a.worker_id) === String(worker.id))
       let deduction = 0
       let remaining = 0
 
       if (activeAdvance) {
         remaining = activeAdvance.balance
+        // Default logic: 20% of balance or 2000, whichever is less
         deduction = Math.min(remaining * 0.2, 2000)
-        deduction = Math.ceil(deduction / 100) * 100
+        deduction = Math.ceil(deduction / 100) * 100 
       }
 
       const baseSalary = Number(worker.base_salary) || 0
@@ -187,7 +181,9 @@ export default function SalaryPage() {
     const row = newData[index]
     // @ts-ignore
     row[field] = value
-    if (field === 'gross_earnings' || field === 'advance_deduction' || field === 'other_deductions' || field === 'hul_direct_payment') {
+    
+    // Auto-recalculate Net Payable
+    if (['gross_earnings', 'advance_deduction', 'other_deductions', 'hul_direct_payment'].includes(field)) {
         const gross = Number(row.gross_earnings) || 0
         const adv = Number(row.advance_deduction) || 0
         const other = Number(row.other_deductions) || 0
@@ -198,11 +194,11 @@ export default function SalaryPage() {
   }
 
   const handleSavePayroll = async () => {
-    const confirmMsg = `Confirm SAVE for ${selectedMonth + 1}/${selectedYear}?\n\nThis will:\n1. Lock these records\n2. DEDUCT advances from worker balances`
-    if (!confirm(confirmMsg)) return
+    if (!confirm(`Confirm SAVE for ${selectedMonth + 1}/${selectedYear}?\n\nThis will LOCK records and DEDUCT advances.`)) return
 
     setSaving(true)
     try {
+      // 1. Save Payroll Records
       const dbPayload = payrollData.map(row => ({
         worker_id: row.worker_id,
         month: selectedMonth + 1,
@@ -219,6 +215,7 @@ export default function SalaryPage() {
       const { error } = await supabase.from('salary_payments').insert(dbPayload)
       if (error) throw error
 
+      // 2. Update Advance Balances
       const deductionPromises = payrollData
         .filter(row => Number(row.advance_deduction) > 0)
         .map(async (row) => {
@@ -242,7 +239,7 @@ export default function SalaryPage() {
 
       await Promise.all(deductionPromises)
 
-      alert('Payroll saved successfully! Loan balances updated.')
+      alert('Payroll saved successfully!')
       setIsLocked(true)
       fetchPayrollData()
     } catch (error: any) {
@@ -252,104 +249,104 @@ export default function SalaryPage() {
     }
   }
 
-    const handleReset = async () => {
-    if (!confirm('Warning: This will DELETE the saved report and REVERSE any loan deductions made. Continue?')) return;
+  const handleReset = async () => {
+    if (!confirm('Warning: This will DELETE this report and REVERSE loan deductions. Continue?')) return
 
-    setLoading(true);
+    setLoading(true)
     try {
-      // 1. Fetch the payments we are about to delete to see if any loans need reversing
+      // 1. Find payments with deductions to reverse
       const { data: paymentsToDelete } = await supabase
         .from('salary_payments')
         .select('worker_id, advance_deductions')
         .eq('month', selectedMonth + 1)
         .eq('year', selectedYear)
-        .gt('advance_deductions', 0) // Only care about those with deductions
+        .gt('advance_deductions', 0)
 
-      // 2. Reverse the Loan Deductions (Add money back to balance)
+      // 2. Reverse Loan Deductions
       if (paymentsToDelete && paymentsToDelete.length > 0) {
         const reversalPromises = paymentsToDelete.map(async (p) => {
-           // Get current loan (active or completed)
            const { data: adv } = await supabase
              .from('advances')
              .select('id, balance')
              .eq('worker_id', p.worker_id)
-             .order('created_at', { ascending: false }) // Get latest loan
+             .order('created_at', { ascending: false })
              .limit(1)
              .single()
 
            if (adv) {
-             // ADD the deduction back to the balance
              await supabase.from('advances').update({
                balance: adv.balance + p.advance_deductions,
-               status: 'repaying' // Re-open loan if it was marked completed
+               status: 'repaying'
              }).eq('id', adv.id)
            }
         })
         await Promise.all(reversalPromises)
       }
 
-      // 3. Delete the Report
+      // 3. Delete Report
       const { error } = await supabase
         .from('salary_payments')
         .delete()
         .eq('month', selectedMonth + 1)
-        .eq('year', selectedYear);
+        .eq('year', selectedYear)
 
-      if (error) throw error;
+      if (error) throw error
 
-      alert('Report reset! Loan balances have been corrected.');
-      setIsLocked(false);
-      setPayrollData([]);
-      window.location.reload();
+      alert('Report reset successfully.')
+      setIsLocked(false)
+      setPayrollData([])
+      fetchPayrollData() // Refresh to show fresh calculation
     } catch (error: any) {
-      alert('Error resetting: ' + error.message);
-      setLoading(false);
+      alert('Error resetting: ' + error.message)
+    } finally {
+      setLoading(false)
     }
   }
 
-
   const handleExport = () => {
-    const headers = ['Worker Name', 'Revenue Generated', 'Gross Pay', 'Net Payable'];
+    // Simplified Headers (No Bank Details)
+    const headers = ['Worker Name', 'Revenue (INR)', 'Gross Pay', 'Net Payable', 'Status']
     const csvRows = payrollData.map(row => [
       `"${row.worker_name}"`,
       (row.total_tons * contractRate).toFixed(0),
       row.gross_earnings,
-      row.net_payable
-    ].join(','));
+      row.net_payable,
+      row.status
+    ].join(','))
 
-    const csvContent = [headers.join(','), ...csvRows].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Payroll_Revenue_${selectedMonth + 1}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+    const csvContent = [headers.join(','), ...csvRows].join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.setAttribute('href', url)
+    link.setAttribute('download', `Payroll_${selectedMonth + 1}_${selectedYear}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
 
-  // Calculated Totals
-  const totalRevenue = payrollData.reduce((sum, row) => sum + (row.total_tons * contractRate), 0);
-  const totalPayout = payrollData.reduce((sum, row) => sum + Number(row.net_payable), 0);
-  const totalProfit = totalRevenue - totalPayout;
+  // Totals
+  const totalRevenue = payrollData.reduce((sum, row) => sum + (row.total_tons * contractRate), 0)
+  const totalPayout = payrollData.reduce((sum, row) => sum + Number(row.net_payable), 0)
+  const totalProfit = totalRevenue - totalPayout
 
   return (
     <div className="space-y-6">
-      {/* Header Controls */}
+      {/* Header */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <Wallet className="w-8 h-8 text-indigo-600" />
             Payroll & Revenue
           </h1>
-          <p className="text-gray-500 text-sm mt-1">Calculate salaries and track worker revenue generation</p>
+          <p className="text-gray-500 text-sm mt-1">Calculate monthly salaries and net profit</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
            {/* Revenue Input */}
            <div className="bg-green-50 px-4 py-2 rounded-lg border border-green-200">
               <label className="text-xs text-green-800 font-semibold uppercase tracking-wider block mb-1">
-                Contract Rate (₹/Ton)
+                Rate (₹/Ton)
               </label>
               <div className="flex items-center gap-2">
                 <span className="text-green-700 font-bold">₹</span>
@@ -391,7 +388,9 @@ export default function SalaryPage() {
       {/* Main Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-500">Loading payroll data...</div>
+          <div className="flex justify-center items-center h-64">
+             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+          </div>
         ) : (
           <>
             <div className="overflow-x-auto">
@@ -399,10 +398,8 @@ export default function SalaryPage() {
                 <thead className="bg-gray-50 text-gray-700 font-semibold border-b border-gray-200">
                   <tr>
                     <th className="px-6 py-4">Worker</th>
-                    <th className="px-6 py-4 text-center">Performance</th>
-                    {/* NEW COLUMN */}
-                    <th className="px-6 py-4 text-right bg-green-50 text-green-800">Revenue (₹)</th>
-
+                    <th className="px-6 py-4 text-center">Tons/Days</th>
+                    <th className="px-6 py-4 text-right bg-green-50 text-green-800">Revenue</th>
                     <th className="px-6 py-4 text-right">Gross Pay</th>
                     <th className="px-6 py-4 text-right text-red-600">Adv. Ded.</th>
                     <th className="px-6 py-4 text-right text-red-600">Other</th>
@@ -424,15 +421,12 @@ export default function SalaryPage() {
                         )}
                       </td>
                       <td className="px-6 py-4 text-center">
-                        <div className="font-medium">{row.total_tons.toFixed(2)} T</div>
+                        <div className="font-medium">{row.total_tons.toFixed(2)}</div>
                         <div className="text-xs text-gray-400">{row.work_days} Days</div>
                       </td>
-
-                      {/* REVENUE CELL */}
                       <td className="px-6 py-4 text-right font-mono font-medium text-green-700 bg-green-50/30">
-                        ₹{(row.total_tons * contractRate).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        ₹{(row.total_tons * contractRate).toLocaleString()}
                       </td>
-
                       <td className="px-4 py-3 text-right">
                         <input
                           type="number"
@@ -476,12 +470,12 @@ export default function SalaryPage() {
                   ))}
                 </tbody>
 
-                {/* FOOTER SUMMARY */}
+                {/* Footer Totals */}
                 <tfoot className="bg-gray-50 font-bold text-gray-900 border-t-2 border-gray-200">
                   <tr>
                     <td className="px-6 py-4" colSpan={2}>Monthly Totals</td>
                     <td className="px-6 py-4 text-right text-green-700">
-                      ₹{totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      ₹{totalRevenue.toLocaleString()}
                     </td>
                     <td className="px-6 py-4 text-right">
                       ₹{payrollData.reduce((s, r) => s + Number(r.gross_earnings), 0).toLocaleString()}
@@ -491,17 +485,15 @@ export default function SalaryPage() {
                        ₹{totalPayout.toLocaleString()}
                     </td>
                   </tr>
-
-                  {/* PROFIT ROW */}
                   <tr className="bg-indigo-900 text-white">
                     <td className="px-6 py-3" colSpan={4}>
                        <div className="flex items-center gap-2">
                          <TrendingUp className="w-5 h-5 text-green-400" />
-                         NET PROFIT ESTIMATE (Revenue - Payout)
+                         NET PROFIT (Revenue - Payout)
                        </div>
                     </td>
                     <td colSpan={4} className="px-6 py-3 text-right text-xl text-green-300">
-                       ₹{totalProfit.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                       ₹{totalProfit.toLocaleString()}
                     </td>
                   </tr>
                 </tfoot>
