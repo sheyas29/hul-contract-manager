@@ -11,9 +11,10 @@ type Worker = {
   phone: string
   base_salary: number
   status: string
-  bank_account?: string
-  ifsc?: string
-  joined_date?: string
+  // DB Column Names
+  account_number?: string | null
+  ifsc?: string | null
+  join_date?: string | null
 }
 
 export default function WorkersPage() {
@@ -25,7 +26,7 @@ export default function WorkersPage() {
   const [editingWorker, setEditingWorker] = useState<Worker | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
-  // Form State
+  // Form State (Internal names for UI)
   const initialFormState = {
     name: '', role: 'worker', phone: '', base_salary: '',
     status: 'active', bank_account: '', ifsc: '', joined_date: ''
@@ -57,15 +58,16 @@ export default function WorkersPage() {
 
   const handleEdit = (worker: Worker) => {
     setEditingWorker(worker)
+    // Map DB columns -> Form state
     setFormData({
       name: worker.name,
       role: worker.role,
       phone: worker.phone || '',
       base_salary: worker.base_salary.toString(),
       status: worker.status,
-      bank_account: worker.bank_account || '',
+      bank_account: worker.account_number || '', // MAP: account_number -> bank_account
       ifsc: worker.ifsc || '',
-      joined_date: worker.joined_date || ''
+      joined_date: worker.join_date || ''        // MAP: join_date -> joined_date
     })
     setShowModal(true)
   }
@@ -73,7 +75,7 @@ export default function WorkersPage() {
   const closeModal = () => {
     setShowModal(false)
     setEditingWorker(null)
-    setFormData(initialFormState) // Reset form on close
+    setFormData(initialFormState)
     setError(null)
   }
 
@@ -82,24 +84,26 @@ export default function WorkersPage() {
     setIsSaving(true)
     setError(null)
 
-    // Basic Validation
-    const salary = parseFloat(formData.base_salary)
-    if (isNaN(salary) || salary < 0) {
+    // Validation
+    const salaryInput = formData.base_salary
+    if (!salaryInput || isNaN(parseFloat(salaryInput))) {
       alert('Please enter a valid base salary')
       setIsSaving(false)
       return
     }
+    const salary = parseFloat(salaryInput)
 
     try {
+      // PREPARE PAYLOAD (Map Form state -> DB columns)
       const payload = {
         name: formData.name,
         role: formData.role,
-        phone: formData.phone,
+        phone: formData.phone || null,
         base_salary: salary,
         status: formData.status,
-        bank_account: formData.bank_account,
-        ifsc: formData.ifsc,
-        joined_date: formData.joined_date
+        account_number: formData.bank_account || null, // MAP: bank_account -> account_number
+        ifsc: formData.ifsc || null,
+        join_date: formData.joined_date || null        // MAP: joined_date -> join_date
       }
 
       let data: Worker | null = null;
@@ -116,10 +120,9 @@ export default function WorkersPage() {
         if (error) throw error
         data = updated
         
-        // Optimistic Update: Update local state immediately
+        // Update local state
         setWorkers(prev => prev.map(w => w.id === editingWorker.id ? updated : w))
         
-        // Log in background (don't await if you want faster UI, but awaiting ensures audit trail)
         await logActivity('UPDATE_WORKER', `Updated worker: ${formData.name}`)
 
       } else {
@@ -133,7 +136,7 @@ export default function WorkersPage() {
         if (error) throw error
         data = inserted
 
-        // Optimistic Update: Add to local state immediately
+        // Update local state
         setWorkers(prev => [...prev, inserted].sort((a, b) => a.name.localeCompare(b.name)))
         
         await logActivity('ADD_WORKER', `Added new worker: ${formData.name}`)
@@ -143,7 +146,7 @@ export default function WorkersPage() {
 
     } catch (err: any) {
       console.error('Error saving worker:', err)
-      alert('Error saving worker: ' + (err.message || 'Unknown error'))
+      setError(err.message || 'Error saving worker')
     } finally {
       setIsSaving(false)
     }
@@ -195,7 +198,9 @@ export default function WorkersPage() {
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-600">
                     <div>📞 {worker.phone || 'N/A'}</div>
-                    <div className="text-xs text-gray-400 mt-1">Bank: {worker.bank_account || 'N/A'}</div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      Bank: {worker.account_number || 'N/A'}
+                    </div>
                   </td>
                   <td className="px-6 py-4">
                     <span className={`px-2 py-1 text-xs font-semibold rounded-full ${worker.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
@@ -244,7 +249,7 @@ export default function WorkersPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Bank Account</label>
+                  <label className="block text-xs text-gray-500 mb-1">Account Number</label>
                   <input placeholder="Account Number" className="border p-2 rounded w-full focus:ring-2 focus:ring-indigo-500 outline-none" value={formData.bank_account} onChange={e => setFormData({...formData, bank_account: e.target.value})} />
                 </div>
                 <div>
@@ -253,7 +258,7 @@ export default function WorkersPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Joined Date</label>
+                <label className="block text-xs text-gray-500 mb-1">Join Date</label>
                 <input type="date" className="border p-2 rounded w-full focus:ring-2 focus:ring-indigo-500 outline-none" value={formData.joined_date} onChange={e => setFormData({...formData, joined_date: e.target.value})} />
               </div>
               {editingWorker && (
