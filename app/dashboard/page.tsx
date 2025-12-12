@@ -12,7 +12,7 @@ import {
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
-// ... Keep the BarChart component exactly as I gave you in the previous turn ...
+// --- BarChart Component ---
 const BarChart = ({ data }: { data: { date: string, tons: number }[] }) => {
   const maxVal = Math.max(...data.map(d => d.tons), 5);
   return (
@@ -43,9 +43,10 @@ const BarChart = ({ data }: { data: { date: string, tons: number }[] }) => {
   )
 }
 
+// --- Main Dashboard Component ---
 export default function DashboardHome() {
-  const { role } = useAuth() // Get Role
-  const isAdmin = role === 'admin' // Boolean check
+  const { role } = useAuth()
+  const isAdmin = role === 'admin'
 
   const [loading, setLoading] = useState(true)
 
@@ -60,8 +61,12 @@ export default function DashboardHome() {
   const [weeklyData, setWeeklyData] = useState<{ date: string, tons: number }[]>([])
 
   useEffect(() => {
-    fetchDashboardData()
-  }, [])
+    // Only start fetching once we know the role (auth is loaded)
+    // If role is undefined/null initially, this effect waits until it's populated.
+    if (role !== undefined) {
+        fetchDashboardData()
+    }
+  }, [role])
 
   const fetchDashboardData = async () => {
     try {
@@ -69,7 +74,7 @@ export default function DashboardHome() {
         const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
         const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0]
 
-        // 1. Fetch Tons (Everyone can see this)
+        // 1. Fetch Tons (Visible to ALL)
         const { data: tonsData } = await supabase
             .from('daily_tons')
             .select('tons_lifted, date')
@@ -87,27 +92,35 @@ export default function DashboardHome() {
         }
         setWeeklyData(last7Days)
 
-        // 2. Fetch Workers (Everyone can see)
+        // 2. Fetch Active Workers
         const { count: workerCount } = await supabase
             .from('workers')
             .select('*', { count: 'exact', head: true })
             .eq('status', 'active')
 
-        // 3. Financials (ADMIN ONLY)
+        // 3. Financials (ADMIN ONLY) - ROBUST CALCULATION FIX
         let calculatedBalance = 0
         let pendingCount = 0
 
-        if (isAdmin) {
-             const { data: txs } = await supabase.from('petty_cash_transactions').select('*')
-             if (txs) {
+        // Explicitly check role inside the async function to prevent "0 balance" glitch on refresh
+        if (role === 'admin') {
+             const { data: txs, error } = await supabase
+                .from('petty_cash_transactions')
+                .select('*')
+
+             if (txs && !error) {
                 calculatedBalance = txs.reduce((acc, tx) => {
                     const amt = Number(tx.amount) || 0
-                    if (tx.type === 'deposit') return tx.status === 'approved' ? acc + amt : acc
-                    if (tx.type === 'expense') {
+
+                    if (tx.type === 'deposit') {
+                        // Only approved deposits count
+                        return tx.status === 'approved' ? acc + amt : acc
+                    } else {
+                        // Expenses: Pending OR Approved deduct from cash-in-hand
                         if (tx.status === 'pending') pendingCount++
+                        // Rejected expenses are ignored (cash stays)
                         return tx.status === 'rejected' ? acc : acc - amt
                     }
-                    return acc
                 }, 0)
              }
         }
@@ -241,7 +254,7 @@ export default function DashboardHome() {
                     </div>
                 </Link>
 
-                {/* 2. Expenses (Visible to All - Supervisors log expenses, Admins manage them) */}
+                {/* 2. Expenses (Visible to All) */}
                 <Link href="/dashboard/expenses" className="group bg-white hover:border-indigo-300 border border-gray-200 p-6 rounded-2xl shadow-sm transition-all active:scale-95 flex flex-col items-start justify-between h-32">
                     <div className="p-3 bg-red-50 text-red-600 rounded-xl group-hover:scale-110 transition-transform">
                         <Wallet className="w-6 h-6" />
