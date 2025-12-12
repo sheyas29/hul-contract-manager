@@ -3,6 +3,7 @@
 import { logActivity } from '@/lib/logger'
 import { supabase } from '@/lib/supabase'
 import { useEffect, useState } from 'react'
+import { CheckCircle, AlertCircle, X, User, Phone, Briefcase, IndianRupee, Building2, Calendar } from 'lucide-react'
 
 // --- Types ---
 type Worker = {
@@ -18,14 +19,21 @@ type Worker = {
   join_date?: string | null
 }
 
+type ToastMessage = {
+  message: string
+  type: 'success' | 'error'
+} | null
+
 export default function WorkersPage() {
   const [workers, setWorkers] = useState<Worker[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   
+  // UI State
   const [showModal, setShowModal] = useState(false)
   const [editingWorker, setEditingWorker] = useState<Worker | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [toast, setToast] = useState<ToastMessage>(null)
 
   // Form State
   const initialFormState = {
@@ -37,6 +45,18 @@ export default function WorkersPage() {
   useEffect(() => {
     fetchWorkers()
   }, [])
+
+  // Auto-dismiss toast after 3 seconds
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [toast])
+
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type })
+  }
 
   const fetchWorkers = async () => {
     try {
@@ -86,7 +106,7 @@ export default function WorkersPage() {
 
     const salaryInput = formData.base_salary
     if (!salaryInput || isNaN(parseFloat(salaryInput))) {
-      alert('Please enter a valid base salary')
+      showToast('Please enter a valid base salary', 'error')
       setIsSaving(false)
       return
     }
@@ -104,8 +124,6 @@ export default function WorkersPage() {
         join_date: formData.joined_date || null
       }
 
-      let data: Worker | null = null;
-
       if (editingWorker) {
         // UPDATE
         const { data: updated, error } = await supabase
@@ -116,9 +134,10 @@ export default function WorkersPage() {
           .single()
 
         if (error) throw error
-        data = updated
+        
         setWorkers(prev => prev.map(w => w.id === editingWorker.id ? updated : w))
         await logActivity('UPDATE_WORKER', `Updated worker: ${formData.name}`)
+        showToast('Worker updated successfully!', 'success')
 
       } else {
         // INSERT
@@ -129,15 +148,16 @@ export default function WorkersPage() {
           .single()
 
         if (error) throw error
-        data = inserted
+        
         setWorkers(prev => [...prev, inserted].sort((a, b) => a.name.localeCompare(b.name)))
         await logActivity('ADD_WORKER', `Added new worker: ${formData.name}`)
+        showToast('New worker added successfully!', 'success')
       }
       closeModal()
 
     } catch (err: any) {
       console.error('Error saving worker:', err)
-      setError(err.message || 'Error saving worker')
+      showToast(err.message || 'Error saving worker', 'error')
     } finally {
       setIsSaving(false)
     }
@@ -153,7 +173,23 @@ export default function WorkersPage() {
   )
 
   return (
-    <div className="p-6 md:p-10 max-w-7xl mx-auto">
+    <div className="p-6 md:p-10 max-w-7xl mx-auto relative">
+      
+      {/* --- TOAST NOTIFICATION --- */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg border animate-in slide-in-from-top-2 duration-300 ${
+          toast.type === 'success' 
+            ? 'bg-green-50 border-green-200 text-green-800' 
+            : 'bg-red-50 border-red-200 text-red-800'
+        }`}>
+          {toast.type === 'success' ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
+          <span className="font-medium text-sm">{toast.message}</span>
+          <button onClick={() => setToast(null)} className="ml-2 hover:opacity-70">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
@@ -170,7 +206,7 @@ export default function WorkersPage() {
 
       {error && (
         <div className="bg-red-50 text-red-700 p-4 rounded-xl mb-6 border border-red-100 flex items-center gap-3">
-          <span>⚠️</span> {error}
+          <AlertCircle size={20} /> {error}
         </div>
       )}
 
@@ -192,7 +228,7 @@ export default function WorkersPage() {
                 <tr>
                   <td colSpan={5} className="px-6 py-12 text-center">
                     <div className="flex flex-col items-center justify-center text-gray-400">
-                      <span className="text-4xl mb-2">👥</span>
+                      <User size={48} strokeWidth={1} className="mb-2" />
                       <p className="text-lg font-medium text-gray-900">No workers found</p>
                       <p className="text-sm">Get started by adding your first team member.</p>
                     </div>
@@ -209,23 +245,28 @@ export default function WorkersPage() {
                         <div className="ml-4">
                           <div className="text-sm font-semibold text-gray-900">{worker.name}</div>
                           <div className="text-xs text-gray-500 flex items-center gap-1">
-                            📞 {worker.phone || 'No Phone'}
+                            <Phone size={12} /> {worker.phone || 'No Phone'}
                           </div>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900 font-medium capitalize">{worker.role}</div>
-                      <div className="text-xs text-gray-500 mt-0.5 font-mono">
-                        ₹{worker.base_salary.toLocaleString('en-IN')} / mo
+                      <div className="flex items-center gap-1.5 text-sm text-gray-900 font-medium capitalize">
+                        <Briefcase size={14} className="text-gray-400" /> {worker.role}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1 font-mono flex items-center gap-1">
+                        <IndianRupee size={10} /> {worker.base_salary.toLocaleString('en-IN')} / mo
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm text-gray-600">
                         {worker.account_number ? (
                           <div className="flex flex-col gap-0.5">
-                            <span className="font-mono text-gray-700">{worker.account_number}</span>
-                            {worker.ifsc && <span className="text-xs text-gray-400 font-mono">{worker.ifsc}</span>}
+                            <div className="flex items-center gap-1.5">
+                              <Building2 size={14} className="text-gray-400" />
+                              <span className="font-mono text-gray-700">{worker.account_number}</span>
+                            </div>
+                            {worker.ifsc && <span className="text-xs text-gray-400 font-mono ml-5">{worker.ifsc}</span>}
                           </div>
                         ) : (
                           <span className="text-gray-400 italic text-xs">No bank details</span>
@@ -233,10 +274,10 @@ export default function WorkersPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border
                         ${worker.status === 'active' 
-                          ? 'bg-green-50 text-green-700 border border-green-200' 
-                          : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                          ? 'bg-green-50 text-green-700 border-green-200' 
+                          : 'bg-red-50 text-red-700 border-red-200'}`}>
                         {worker.status === 'active' ? '● Active' : '○ Inactive'}
                       </span>
                     </td>
@@ -267,7 +308,7 @@ export default function WorkersPage() {
                 {editingWorker ? 'Edit Employee Details' : 'Add New Employee'}
               </h2>
               <button onClick={closeModal} className="text-gray-400 hover:text-gray-600 transition-colors">
-                ✕
+                <X size={20} />
               </button>
             </div>
 
@@ -276,13 +317,17 @@ export default function WorkersPage() {
               
               <div className="grid grid-cols-2 gap-5">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Full Name *</label>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1">
+                    <User size={12} /> Full Name *
+                  </label>
                   <input required placeholder="e.g. Rahul Sharma" 
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" 
                     value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Phone Number *</label>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1">
+                    <Phone size={12} /> Phone Number *
+                  </label>
                   <input required type="tel" placeholder="e.g. 98765 43210" 
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" 
                     value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
@@ -291,7 +336,9 @@ export default function WorkersPage() {
 
               <div className="grid grid-cols-2 gap-5">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Role</label>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1">
+                    <Briefcase size={12} /> Role
+                  </label>
                   <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white" 
                     value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}>
                     <option value="worker">Worker</option>
@@ -299,7 +346,9 @@ export default function WorkersPage() {
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Monthly Salary (₹) *</label>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1">
+                    <IndianRupee size={12} /> Monthly Salary *
+                  </label>
                   <input required type="number" placeholder="0.00" min="0" step="100" 
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" 
                     value={formData.base_salary} onChange={e => setFormData({...formData, base_salary: e.target.value})} />
@@ -307,7 +356,9 @@ export default function WorkersPage() {
               </div>
 
               <div className="p-4 bg-gray-50 rounded-xl space-y-4 border border-gray-100">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Banking Details</h3>
+                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                  <Building2 size={12} /> Banking Details
+                </h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-gray-600">Account Number</label>
@@ -325,7 +376,9 @@ export default function WorkersPage() {
 
               <div className="grid grid-cols-2 gap-5">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Date of Joining</label>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1">
+                    <Calendar size={12} /> Date of Joining
+                  </label>
                   <input type="date" 
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" 
                     value={formData.joined_date} onChange={e => setFormData({...formData, joined_date: e.target.value})} />
@@ -349,8 +402,15 @@ export default function WorkersPage() {
                   Cancel
                 </button>
                 <button type="submit" disabled={isSaving} 
-                  className="flex-1 px-4 py-2.5 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-70 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition-all">
-                  {isSaving ? 'Saving...' : 'Save Employee'}
+                  className="flex-1 px-4 py-2.5 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-70 disabled:cursor-not-allowed shadow-md hover:shadow-lg transition-all flex justify-center items-center gap-2">
+                  {isSaving ? (
+                    <>
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Employee'
+                  )}
                 </button>
               </div>
 
