@@ -244,7 +244,7 @@ export default function DashboardHome() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
 
                 {/* 1. Daily Entry (PRIMARY ACTION) */}
-                <Link href="/dashboard/daily-entry" className="group bg-indigo-600 hover:bg-indigo-700 text-white p-6 rounded-2xl shadow-lg shadow-indigo-200 transition-all active:scale-95 flex flex-col items-start justify-between h-32 col-span-2 md:col-span-1">
+                <Link href="/dashboard/tons" className="group bg-indigo-600 hover:bg-indigo-700 text-white p-6 rounded-2xl shadow-lg shadow-indigo-200 transition-all active:scale-95 flex flex-col items-start justify-between h-32 col-span-2 md:col-span-1">
                     <div className="p-3 bg-white/20 rounded-xl group-hover:bg-white/30 transition-colors">
                         <Plus className="w-6 h-6" />
                     </div>
