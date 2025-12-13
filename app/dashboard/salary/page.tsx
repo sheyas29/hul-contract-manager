@@ -47,11 +47,10 @@ export default function SalaryPage() {
   const fetchPayrollData = async () => {
     setLoading(true)
     try {
-      // Fetch Active Workers
+      // FIX 1: Fetch ALL workers (Active & Inactive) to show correct names in history
       const { data: workers, error: workerError } = await supabase
         .from('workers')
-        .select('id, name, base_salary')
-        .eq('status', 'active')
+        .select('id, name, base_salary, status')
         .order('name')
 
       if (workerError) throw workerError
@@ -89,7 +88,7 @@ export default function SalaryPage() {
 
           return {
             worker_id: s.worker_id,
-            worker_name: w?.name || 'Unknown',
+            worker_name: w ? w.name : 'Unknown Worker',
             total_tons: totalTons,
             work_days: workerTons.length,
             base_salary_rate: Number(s.base_salary),
@@ -106,7 +105,11 @@ export default function SalaryPage() {
         setPayrollData(formattedData)
       } else {
         setIsLocked(false)
-        if (workers) await calculateFreshPayroll(workers)
+        if (workers) {
+          // FIX 2: Only calculate fresh payroll for ACTIVE workers
+          const activeWorkers = workers.filter(w => w.status === 'active')
+          await calculateFreshPayroll(activeWorkers)
+        }
       }
     } catch (error) {
       console.error('Error fetching payroll:', error)
@@ -414,6 +417,8 @@ export default function SalaryPage() {
                     <tr key={row.worker_id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4 font-medium text-gray-900">
                         {row.worker_name}
+                        {/* Show Inactive Label for historical records if needed */}
+                        {/* Note: We don't have w.status here inside the loop for locked records easily, but names are preserved */}
                         {row.advance_balance_remaining > 0 && !isLocked && (
                           <div className="text-xs text-orange-600 font-normal mt-1 flex items-center gap-1">
                             <AlertCircle className="w-3 h-3" /> Bal: ₹{row.advance_balance_remaining}
